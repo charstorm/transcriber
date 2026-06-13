@@ -1,0 +1,23 @@
+{
+  "name": "transcriber",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "predev": "node scripts/copy-vad-assets.mjs",
+    "dev": "vite",
+    "prebuild": "node scripts/copy-vad-assets.mjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-clipboard-manager": "^2",
+    "@ricky0123/vad-web": "^0.0.24"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "vite": "^6.0.3"
+  }
+}
