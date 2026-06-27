@@ -22,6 +22,9 @@ tauri = { version = "2", features = [] }
 tauri-plugin-clipboard-manager = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# TEMP: for the throwaway audio-dump command (see tmp/next.md). Remove later.
+base64 = "0.22"
+dirs = "5"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Version must match the webkit2gtk that tauri pulls in, so PlatformWebview's

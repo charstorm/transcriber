@@ -14,16 +14,15 @@
     "windows": [
       {
         "title": "transcriber",
-        "width": 420,
-        "height": 560,
-        "minWidth": 320,
-        "minHeight": 360,
+        "width": 900,
+        "height": 438,
+        "minWidth": 570,
+        "minHeight": 350,
         "decorations": false,
         "alwaysOnTop": true,
-        "transparent": false,
+        "transparent": true,
         "resizable": true,
-        "theme": "Dark",
-        "backgroundColor": "#080810"
+        "theme": "Dark"
       }
     ],
     "security": {

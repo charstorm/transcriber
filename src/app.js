@@ -1,6 +1,28 @@
 import { MicVAD } from "@ricky0123/vad-web";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
+
+// ── debug instrumentation ────────────────────────────────────────────────────
+// DUMP_AUDIO is throwaway (see tmp/next.md): dump each utterance WAV for manual
+// audio-quality inspection. Logging is persistent — every pipeline event is
+// mirrored to ~/.cache/transcriber/transcriber.log (truncated each launch) so
+// dropped/empty transcriptions can be diagnosed after the fact.
+const DUMP_AUDIO = true;
+let dumpSeq = 0;
+
+const ts = () => {
+  const d = new Date();
+  const p = (n, w = 2) => String(n).padStart(w, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
+};
+const log = (...args) => {
+  const line =
+    ts() + " " +
+    args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
+  console.log("[transcriber]", line);
+  invoke("log_append", { line }).catch(() => {}); // mirror to disk, best-effort
+};
 
 // ── config ────────────────────────────────────────────────────────────────
 const CONFIG_KEY = "transcriber:config";
@@ -24,25 +46,83 @@ const SYSTEM_PROMPT =
 
 const USER_PROMPT = "Transcribe the audio verbatim.";
 
-// Silero VAD tuning (mirrors the proven reshka web config)
+// Silero VAD tuning. v5 frame = 512 samples @16kHz ≈ 32ms.
 const VAD_CONFIG = {
   positiveSpeechThreshold: 0.5,
   negativeSpeechThreshold: 0.35,
-  redemptionFrames: 8,
+  // silence required before an utterance is considered finished.
+  // 22 frames ≈ ~700ms — short pauses between clauses no longer split one
+  // utterance into several. (was 8 ≈ ~256ms, too aggressive.)
+  redemptionFrames: 22,
   minSpeechFrames: 15,
+  // audio confirmed good, so the clipped onset is purely missing pre-roll:
+  // prepend ~5 frames (~160ms) before detected speech start so the first
+  // word isn't cut. (vad-web default is 1 frame ≈ 32ms.)
+  preSpeechPadFrames: 5,
 };
 
 let config = { ...DEFAULTS };
 let vadInstance = null;
 let isRecording = false;
-let activeApiCount = 0;
+let activeApiCount = 0; // requests currently in flight
+let capturedTotal = 0; // utterances captured this session
+let completedTotal = 0; // utterances successfully transcribed
 
 // ── element refs ────────────────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
 const statusDot = $("statusDot");
+const statusText = $("statusText");
 const transcriptEl = $("transcript");
 const recLabel = $("recLabel");
 const btnToggleRec = $("btnToggleRec");
+
+const queueChip = $("queueChip");
+
+// human-readable label shown next to the visualizer per pipeline state
+const STATUS_LABELS = {
+  idle: "",
+  listening: "Listening…",
+  speaking: "Speaking…",
+  processing: "Transcribing…",
+  error: "Transcription failed",
+};
+
+// ── live audio-energy visualizer ──────────────────────────────────────────────
+// Bars are driven by the real per-frame RMS energy (via VAD onFrameProcessed),
+// scrolling left→right, so the viz actually reflects the captured audio.
+const vizBars = Array.from(document.querySelectorAll(".viz i"));
+const vizHist = new Array(vizBars.length).fill(0);
+
+function frameRms(frame) {
+  let sum = 0;
+  for (let i = 0; i < frame.length; i++) sum += frame[i] * frame[i];
+  return Math.sqrt(sum / frame.length);
+}
+function renderViz(rms) {
+  vizHist.push(rms);
+  vizHist.shift();
+  for (let i = 0; i < vizBars.length; i++) {
+    const h = Math.max(6, Math.min(100, Math.sqrt(vizHist[i]) * 260));
+    vizBars[i].style.height = h + "%";
+  }
+}
+function resetViz() {
+  vizHist.fill(0);
+  for (const b of vizBars) b.style.height = "20%";
+}
+
+// ── queue / in-flight indicator ───────────────────────────────────────────────
+function updateQueue() {
+  if (!queueChip) return;
+  if (activeApiCount > 0) {
+    queueChip.classList.add("busy");
+    queueChip.innerHTML =
+      `<span class="spin"></span>${activeApiCount} transcribing · ${completedTotal} done`;
+  } else {
+    queueChip.classList.remove("busy");
+    queueChip.textContent = capturedTotal ? `${completedTotal}/${capturedTotal} done` : "";
+  }
+}
 
 // ── config persistence ──────────────────────────────────────────────────────
 function loadConfig() {
@@ -86,12 +166,15 @@ function showView(name) {
 
 // ── status indicator ──────────────────────────────────────────────────────────
 function setStatus(state) {
-  // state: idle | listening | speaking | processing
+  // state: idle | listening | speaking | processing | error
   statusDot.className = "dot " + state;
   statusDot.title = state;
+  statusText.className = "status-text " + state;
+  statusText.textContent = STATUS_LABELS[state] ?? "";
 }
 
 function refreshStatus() {
+  updateQueue();
   if (!isRecording) return setStatus("idle");
   if (activeApiCount > 0) return setStatus("processing");
   setStatus("listening");
@@ -105,10 +188,6 @@ function appendTranscript(text) {
   transcriptEl.value = existing ? existing + "\n" + t : t;
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
   localStorage.setItem(TRANSCRIPT_KEY, transcriptEl.value);
-}
-
-function loadTranscript() {
-  transcriptEl.value = localStorage.getItem(TRANSCRIPT_KEY) || "";
 }
 
 async function copyTranscript() {
@@ -167,8 +246,20 @@ async function transcribeAudio(float32) {
     return;
   }
   const base64 = float32ToWavBase64(float32, 16000);
+  let failed = false;
+
+  // TEMP: dump the exact WAV being sent, for manual inspection (see tmp/next.md)
+  if (DUMP_AUDIO) {
+    const ms = Math.round((float32.length / 16000) * 1000);
+    const name = `utterance-${String(++dumpSeq).padStart(3, "0")}-${ms}ms.wav`;
+    invoke("dump_wav", { filename: name, b64: base64 })
+      .then((path) => log("dumped audio →", path))
+      .catch((e) => log("audio dump failed:", e));
+  }
+
   activeApiCount++;
   refreshStatus();
+  log(`sending ${Math.round(base64.length / 1024)}KB (b64) to ${config.model}`);
   try {
     const resp = await fetch(config.endpoint, {
       method: "POST",
@@ -199,12 +290,28 @@ async function transcribeAudio(float32) {
       .replace(/```json\n?/gi, "")
       .replace(/```\n?/g, "")
       .trim();
-    appendTranscript(cleaned);
+    if (cleaned) {
+      log(`response: ${cleaned.length} chars — ${JSON.stringify(cleaned.slice(0, 80))}`);
+      completedTotal++;
+      appendTranscript(cleaned);
+    } else {
+      // model returned nothing — this is the "audio dropped, no transcript" case
+      log("response EMPTY — model returned no text; nothing appended");
+      completedTotal++;
+    }
   } catch (err) {
     console.error("transcription error:", err);
+    log("transcription ERROR:", String(err));
+    failed = true;
   } finally {
     activeApiCount = Math.max(0, activeApiCount - 1);
-    refreshStatus();
+    if (failed) {
+      // surface the failure briefly, then fall back to the live state
+      setStatus("error");
+      setTimeout(refreshStatus, 2500);
+    } else {
+      refreshStatus();
+    }
   }
 }
 
@@ -218,21 +325,35 @@ async function startRecording() {
         baseAssetPath: "/vad/",
         onnxWASMBasePath: "/vad/",
         model: "v5",
-        onSpeechStart: () => setStatus("speaking"),
+        onSpeechStart: () => {
+          log("speech start");
+          setStatus("speaking");
+        },
         onSpeechEnd: (audio) => {
+          const ms = Math.round((audio.length / 16000) * 1000);
+          capturedTotal++;
+          log(`speech end — ${ms}ms (${audio.length} samples @16kHz), captured #${capturedTotal}`);
           refreshStatus();
           transcribeAudio(audio);
         },
-        onVADMisfire: () => refreshStatus(),
+        onVADMisfire: () => {
+          log("VAD misfire (too short)");
+          refreshStatus();
+        },
+        onFrameProcessed: (_probs, frame) => {
+          if (frame) renderViz(frameRms(frame));
+        },
       });
     }
     vadInstance.start();
     isRecording = true;
     recLabel.textContent = "Stop";
     btnToggleRec.classList.add("active");
+    log("recording started");
     refreshStatus();
   } catch (err) {
     console.error("failed to start recording:", err);
+    log("failed to start recording:", String(err));
     setStatus("idle");
   }
 }
@@ -248,6 +369,8 @@ async function stopRecording() {
   isRecording = false;
   recLabel.textContent = "Start";
   btnToggleRec.classList.remove("active");
+  log("recording stopped");
+  resetViz();
   setStatus("idle");
 }
 
@@ -314,8 +437,13 @@ function wire() {
 
 async function init() {
   loadConfig();
-  loadTranscript();
+  clearTranscript(); // always start from an empty transcript on launch
   wire();
+  resetViz();
+  // truncate + open a fresh log file for this session
+  invoke("log_init")
+    .then((path) => log("=== transcriber session start — log at", path))
+    .catch((e) => console.error("log_init failed:", e));
   setStatus("idle");
   if (config.autoRecord) {
     // small delay so the window paints before the mic/VAD spins up

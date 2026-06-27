@@ -30,15 +30,20 @@
 
     <!-- TRANSCRIPT VIEW -->
     <section class="view" id="viewTranscript">
+      <div class="ta-wrap">
+        <textarea id="transcript" spellcheck="false" placeholder="Transcription will appear here…"></textarea>
+      </div>
       <div class="transcript-toolbar">
         <button class="pill" id="btnToggleRec">
           <span class="rec-icon"></span><span id="recLabel">Start</span>
         </button>
+        <span class="viz" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+        <span class="status-text" id="statusText"></span>
         <div class="spacer"></div>
+        <span class="queue-chip" id="queueChip"></span>
         <button class="mini-btn" id="btnCopy" title="Copy (Ctrl+C)">Copy</button>
         <button class="mini-btn" id="btnClear" title="Clear (Ctrl+L)">Clear</button>
       </div>
-      <textarea id="transcript" spellcheck="false" placeholder="Transcription will appear here…"></textarea>
     </section>
 
     <!-- CONFIG VIEW -->
