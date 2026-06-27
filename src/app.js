@@ -31,7 +31,10 @@ const TRANSCRIPT_KEY = "transcriber:transcript";
 const DEFAULTS = {
   endpoint: "https://openrouter.ai/api/v1/chat/completions",
   apiKey: "",
-  model: "google/gemini-2.5-flash",
+  // matches reshka's active model (~/.config/reshka/config.yaml). reshka also
+  // keeps openai/gpt-audio-mini and google/gemini-3.1-flash-lite as commented
+  // alternatives.
+  model: "mistralai/voxtral-small-24b-2507",
   autoRecord: true,
   autoCopy: true,
 };
@@ -433,6 +436,13 @@ function wire() {
     localStorage.setItem(TRANSCRIPT_KEY, transcriptEl.value)
   );
   document.addEventListener("keydown", handleKeydown);
+
+  // Make the window draggable by its titlebar. data-tauri-drag-region is
+  // unreliable on Wayland/WebKitGTK, so drive startDragging() explicitly.
+  document.querySelector(".titlebar").addEventListener("mousedown", (e) => {
+    if (e.button !== 0 || e.target.closest("button")) return;
+    getCurrentWindow().startDragging().catch((err) => log("drag failed:", String(err)));
+  });
 }
 
 async function init() {

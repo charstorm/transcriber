@@ -30,23 +30,22 @@ body {
 }
 
 /* the window itself is transparent (Tauri) — html stays clear so the OS
-   compositor shows the desktop behind the frosted body. The padding is a
-   transparent gutter that lets the body's drop-shadow render (a frameless
-   transparent window gets no compositor shadow of its own) — this is what
-   makes the glass panel read as "floating", matching the .v-aurora mockup. */
+   compositor shows the desktop behind the frosted body. The glass fills the
+   window edge-to-edge: no gutter/shadow halo (it read as a low-quality border). */
 html {
   background: transparent;
-  padding: 14px;
 }
 
-/* body IS the floating glass window surface */
+/* body IS the glass window surface */
 body {
   background: linear-gradient(160deg, var(--glass-1), var(--glass-2));
   backdrop-filter: blur(28px) saturate(150%);
   -webkit-backdrop-filter: blur(28px) saturate(150%);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  /* square corners: GNOME/Wayland draws a rectangular window shadow that can't
+     be disabled on Linux, so rounded corners leave a visible square overlay.
+     Matching the window to its shadow keeps it clean. */
+  border-radius: 0;
   color: var(--text);
   display: flex;
   flex-direction: column;
@@ -65,7 +64,6 @@ body {
   padding: 0 8px 0 13px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent);
   border-bottom: 1px solid var(--hairline);
-  border-radius: 14px 14px 0 0;
   flex-shrink: 0;
 }
 
