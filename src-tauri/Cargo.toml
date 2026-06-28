@@ -20,6 +20,9 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-clipboard-manager = "2"
+# resident single-instance: a second launch wakes the running window instead of
+# spawning a fresh process (avoids the ~1s WebKitGTK cold start every time).
+tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # parse the user config at ~/.config/transcriber/config.yaml

@@ -273,6 +273,20 @@ fn paste_transcript(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Must be the FIRST plugin. When a second `transcriber` is launched
+        // (e.g. the GNOME shortcut fires again), this callback runs in the
+        // already-running instance and the second process exits. We reveal the
+        // window here and emit "wake" so the frontend clears + re-acquires the
+        // mic and starts recording.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            use tauri::{Emitter, Manager};
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+                let _ = window.emit("wake", ());
+            }
+        }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
             dump_wav,

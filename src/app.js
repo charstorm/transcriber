@@ -435,43 +435,89 @@ async function transcribeAudio(float32, seq) {
   refreshStatus();
 }
 
+// ── mic acquire / release (warm-swap) ─────────────────────────────────────────
+// We deliberately do NOT use vadInstance.destroy() to stop listening, because
+// that closes the AudioContext and tears down the ONNX model + worklet — the
+// heaviest startup cost. Instead we keep the context/worklet/model warm and only
+// stop the MediaStream tracks. Stopping the tracks is what actually releases the
+// mic (OS indicator off, exclusive-access lock freed); the warm worklet means
+// re-acquiring later costs only a fresh getUserMedia (tens of ms), not a model
+// reload (hundreds of ms). Falls back to full create on first use.
+//
+// We reach into a few public-but-undocumented MicVAD fields (.audioContext,
+// .stream, .sourceNode, .audioNodeVAD.receive). They're pinned by our locked
+// vad-web version; if a future bump breaks them, fall back to destroy/recreate.
+const MIC_CONSTRAINTS = {
+  channelCount: 1,
+  echoCancellation: true,
+  autoGainControl: true,
+  noiseSuppression: true,
+};
+
+async function acquireMic() {
+  if (!vadInstance) {
+    // First use: full init (loads ONNX model + WASM — the heavy, one-time cost).
+    const vt0 = performance.now();
+    log("[load] VAD init start");
+    vadInstance = await MicVAD.new({
+      ...buildVadConfig(),
+      baseAssetPath: "/vad/",
+      onnxWASMBasePath: "/vad/",
+      model: "v5",
+      onSpeechStart: () => {
+        log("speech start");
+        setStatus("speaking");
+      },
+      onSpeechEnd: (audio) => {
+        const ms = Math.round((audio.length / 16000) * 1000);
+        const seq = capturedTotal; // 0-based capture order, drives ordered output
+        capturedTotal++;
+        log(`speech end — ${ms}ms (${audio.length} samples @16kHz), captured #${capturedTotal}`);
+        refreshStatus();
+        transcribeAudio(audio, seq);
+      },
+      onVADMisfire: () => {
+        log("VAD misfire (too short)");
+        refreshStatus();
+      },
+      onFrameProcessed: (_probs, frame) => {
+        if (frame) renderViz(frameRms(frame));
+      },
+    });
+    log(`[load] VAD ready in ${Math.round(performance.now() - vt0)}ms`);
+    vadInstance.start();
+    return;
+  }
+  // Warm path: model/worklet/context still alive, only the mic was released.
+  const at0 = performance.now();
+  const ctx = vadInstance.audioContext;
+  if (ctx.state === "suspended") await ctx.resume();
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS });
+  const source = new MediaStreamAudioSourceNode(ctx, { mediaStream: stream });
+  vadInstance.stream = stream;
+  vadInstance.sourceNode = source;
+  vadInstance.audioNodeVAD.receive(source); // reconnect into the warm worklet
+  vadInstance.start();
+  log(`[load] mic re-acquired (warm) in ${Math.round(performance.now() - at0)}ms`);
+}
+
+// Stop listening AND release the mic, while keeping the model warm. Pausing the
+// frame processor (submitUserSpeechOnPause defaults to false, so no partial is
+// flushed), detaching + stopping the tracks, then suspending the context to park
+// the audio thread.
+function releaseMic() {
+  if (!vadInstance) return;
+  try { vadInstance.pause(); } catch (err) { log("releaseMic pause failed:", String(err)); }
+  try { vadInstance.sourceNode.disconnect(); } catch (err) { log("releaseMic disconnect failed:", String(err)); }
+  try { vadInstance.stream.getTracks().forEach((t) => t.stop()); } catch (err) { log("releaseMic stop failed:", String(err)); }
+  try { vadInstance.audioContext.suspend(); } catch (err) { log("releaseMic suspend failed:", String(err)); }
+}
+
 // ── recording control ────────────────────────────────────────────────────────
 async function startRecording() {
   if (isRecording) return;
   try {
-    if (!vadInstance) {
-      // VAD/ONNX init is the heaviest startup cost — time it so we can see how
-      // much of "load delay" is the model/WASM coming up.
-      const vt0 = performance.now();
-      log("[load] VAD init start");
-      vadInstance = await MicVAD.new({
-        ...buildVadConfig(),
-        baseAssetPath: "/vad/",
-        onnxWASMBasePath: "/vad/",
-        model: "v5",
-        onSpeechStart: () => {
-          log("speech start");
-          setStatus("speaking");
-        },
-        onSpeechEnd: (audio) => {
-          const ms = Math.round((audio.length / 16000) * 1000);
-          const seq = capturedTotal; // 0-based capture order, drives ordered output
-          capturedTotal++;
-          log(`speech end — ${ms}ms (${audio.length} samples @16kHz), captured #${capturedTotal}`);
-          refreshStatus();
-          transcribeAudio(audio, seq);
-        },
-        onVADMisfire: () => {
-          log("VAD misfire (too short)");
-          refreshStatus();
-        },
-        onFrameProcessed: (_probs, frame) => {
-          if (frame) renderViz(frameRms(frame));
-        },
-      });
-      log(`[load] VAD ready in ${Math.round(performance.now() - vt0)}ms`);
-    }
-    vadInstance.start();
+    await acquireMic();
     isRecording = true;
     recLabel.textContent = "Stop";
     btnToggleRec.classList.add("active");
@@ -484,14 +530,8 @@ async function startRecording() {
   }
 }
 
-async function stopRecording() {
-  if (vadInstance) {
-    try {
-      vadInstance.pause();
-    } catch (err) {
-      console.error("failed to stop VAD:", err);
-    }
-  }
+function stopRecording() {
+  releaseMic();
   isRecording = false;
   recLabel.textContent = "Start";
   btnToggleRec.classList.remove("active");
@@ -504,25 +544,27 @@ function toggleRecording() {
   isRecording ? stopRecording() : startRecording();
 }
 
-// ── close (with auto-paste / auto-copy) ───────────────────────────────────────
-// On close we either paste the transcript into the previously-focused app
-// (auto-paste, the primary flow) or just copy it to the clipboard. Pasting also
+// ── done: paste, then hide (Esc) or quit (X) ──────────────────────────────────
+// Both exits first deliver the transcript: auto-paste into the previously-focused
+// app (the primary flow) or, failing that, copy to the clipboard. Pasting also
 // loads the clipboard, so an auto-paste implicitly satisfies auto-copy too.
-async function closeApp() {
+// Hiding the window here is also what yields focus back so the keystroke lands in
+// the right app — for Esc that hide is the end state; for X we close after.
+async function pasteTranscript() {
   const text = transcriptEl.value.trim();
-  log(`close: ${text.length} chars, autoPaste=${config.autoPaste}, pasteAvailable=${pasteAvailable}, autoCopy=${config.autoCopy}`);
+  log(`done: ${text.length} chars, autoPaste=${config.autoPaste}, pasteAvailable=${pasteAvailable}, autoCopy=${config.autoCopy}`);
   if (text && config.autoPaste && pasteAvailable) {
     try {
       // Yield focus back to the previous window before the keystroke fires.
-      log("close: hiding window for auto-paste");
+      log("done: hiding window for auto-paste");
       await getCurrentWindow().hide();
       await invoke("paste_transcript", {
         text,
         pasteKey: config.pasteKey,
         delayMs: config.pasteDelayMs,
       });
-      log("close: paste_transcript invoked ok");
-      // brief beat so the detached ydotool is fully spawned before we exit
+      log("done: paste_transcript invoked ok");
+      // brief beat so the detached ydotool is fully spawned before we move on
       await sleep(150);
     } catch (err) {
       console.error("auto-paste failed:", err);
@@ -537,7 +579,37 @@ async function closeApp() {
       console.error("auto-copy failed:", err);
     }
   }
+}
+
+// Esc: paste, release the mic, and HIDE — the app stays resident so the next
+// hotkey press wakes it instantly (no WebKitGTK cold start).
+async function hideApp() {
+  await pasteTranscript();
+  stopRecording(); // releases the mic + resets recording state/UI
+  await getCurrentWindow().hide();
+  log("hidden (resident)");
+}
+
+// X button: paste, release the mic, and actually QUIT the process.
+async function quitApp() {
+  await pasteTranscript();
+  stopRecording();
   await getCurrentWindow().close();
+}
+
+// Second-launch wake (emitted from the Rust single-instance callback): the
+// window is already shown/focused by Rust; here we reset to a clean slate and
+// start recording, matching the "pop up ready to dictate" model.
+async function onWake() {
+  log("wake: re-trigger");
+  clearTranscript();
+  resetViz();
+  if (!hasApiKey()) {
+    showView("Config");
+    return;
+  }
+  showView("Transcript");
+  if (config.autoRecord) await startRecording();
 }
 
 function showPasteWarning(msg) {
@@ -569,7 +641,7 @@ function updateApiWarning() {
 function handleKeydown(e) {
   if (e.key === "Escape") {
     e.preventDefault();
-    closeApp();
+    hideApp();
     return;
   }
   if (!e.ctrlKey) return;
@@ -596,7 +668,7 @@ function handleKeydown(e) {
 function wire() {
   $("btnConfig").addEventListener("click", () => showView("Config"));
   $("btnShortcuts").addEventListener("click", () => showView("Shortcuts"));
-  $("btnClose").addEventListener("click", closeApp);
+  $("btnClose").addEventListener("click", quitApp);
   $("btnConfigBack").addEventListener("click", () => showView("Transcript"));
   $("btnShortcutsBack").addEventListener("click", () => showView("Transcript"));
   $("btnConfigSave").addEventListener("click", () => {
@@ -668,6 +740,8 @@ async function init() {
 
   clearTranscript(); // always start from an empty transcript on launch
   wire();
+  // wake on a second launch (resident single-instance — see Rust callback)
+  getCurrentWindow().listen("wake", onWake).catch((e) => log("wake listen failed:", String(e)));
   resetViz();
   setStatus("idle");
   updateApiWarning();
