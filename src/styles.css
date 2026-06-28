@@ -1,7 +1,10 @@
 :root {
   /* Aurora — frosted glass palette */
-  --glass-1: rgba(20, 24, 40, 0.62);
-  --glass-2: rgba(12, 14, 26, 0.72);
+  /* overall window opacity (0 = transparent, 1 = opaque); set at runtime from
+     config (applyOpacity in app.js). The gradient keeps a subtle ±0.05 spread. */
+  --glass-opacity: 0.6;
+  --glass-1: rgba(20, 24, 40, calc(var(--glass-opacity) - 0.05));
+  --glass-2: rgba(12, 14, 26, calc(var(--glass-opacity) + 0.05));
   --inset: rgba(0, 0, 0, 0.22);
   --border: rgba(255, 255, 255, 0.1);
   --border-soft: rgba(255, 255, 255, 0.06);

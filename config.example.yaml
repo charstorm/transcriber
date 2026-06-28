@@ -8,6 +8,14 @@ model: mistralai/voxtral-small-24b-2507
 # endpoint: https://openrouter.ai/api/v1/chat/completions
 # api_key: sk-...
 
+# Window glass opacity: 0 = fully transparent, 1 = opaque. Lower = see more of
+# the desktop behind the app.
+opacity: 0.6
+
+# Retries on a failed transcription request. Total attempts = max_retries + 1,
+# with exponential backoff (1s, 2s, 4s, 8s …) between attempts.
+max_retries: 3
+
 # Voice-activity-detection tuning. Timings are in milliseconds.
 vad:
   # Confidence (0–1) for a frame to START speech. Lower = more sensitive, so

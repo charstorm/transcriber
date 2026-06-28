@@ -37,6 +37,12 @@ const DEFAULTS = {
   model: "mistralai/voxtral-small-24b-2507",
   autoRecord: true,
   autoCopy: true,
+  // retries on a failed transcription request (total attempts = maxRetries + 1),
+  // with exponential backoff (1s, 2s, 4s, 8s …) between them.
+  maxRetries: 3,
+  // window glass opacity (0 = fully transparent, 1 = opaque). Lower = see more
+  // of the desktop behind the app.
+  opacity: 0.6,
 };
 
 const SYSTEM_PROMPT =
@@ -167,13 +173,15 @@ async function loadFileConfig() {
   if (!file || typeof file !== "object") return;
 
   const str = (x) => (typeof x === "string" && x.trim() ? x.trim() : undefined);
+  const num = (x) => (typeof x === "number" && isFinite(x) ? x : undefined);
   if (str(file.model)) config.model = str(file.model);
   if (str(file.endpoint)) config.endpoint = str(file.endpoint);
   if (str(file.api_key)) config.apiKey = str(file.api_key);
+  if (num(file.max_retries) !== undefined) config.maxRetries = Math.max(0, Math.round(num(file.max_retries)));
+  if (num(file.opacity) !== undefined) config.opacity = Math.min(1, Math.max(0, num(file.opacity)));
 
   const v = file.vad;
   if (v && typeof v === "object") {
-    const num = (x) => (typeof x === "number" && isFinite(x) ? x : undefined);
     const map = {
       positive_speech_threshold: "positiveSpeechThreshold",
       negative_speech_threshold: "negativeSpeechThreshold",
@@ -186,7 +194,9 @@ async function loadFileConfig() {
       if (n !== undefined) vadParams[prop] = n;
     }
   }
-  log("config.yaml applied:", JSON.stringify({ model: config.model, vad: vadParams }));
+  log("config.yaml applied:", JSON.stringify({
+    model: config.model, maxRetries: config.maxRetries, opacity: config.opacity, vad: vadParams,
+  }));
 }
 
 function saveConfig() {
@@ -294,14 +304,64 @@ function float32ToWavBase64(float32, sampleRate = 16000) {
   return btoa(binary);
 }
 
-// ── transcription request ────────────────────────────────────────────────────
-async function transcribeAudio(float32) {
+// ── ordered output ────────────────────────────────────────────────────────────
+// Utterances transcribe in parallel, but their text is written to the transcript
+// in the order they were SPOKEN (capture order), not the order the API happens
+// to return. Each utterance settles its slot exactly once — even on an empty
+// result or a final failure — so the flush pointer never stalls.
+let nextToFlush = 0;
+const pendingResults = new Map(); // seq -> text (string, possibly empty)
+
+function settleOrdered(seq, text) {
+  pendingResults.set(seq, text || "");
+  while (pendingResults.has(nextToFlush)) {
+    const t = pendingResults.get(nextToFlush);
+    pendingResults.delete(nextToFlush);
+    nextToFlush++;
+    if (t) appendTranscript(t);
+  }
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// One transcription HTTP call. Throws on a non-OK response so the retry loop
+// can catch it; returns the cleaned transcript text (may be empty) on success.
+async function postTranscription(base64) {
+  const resp = await fetch(config.endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: config.model,
+      temperature: 0.2,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: [
+            { type: "input_audio", input_audio: { data: base64, format: "wav" } },
+            { type: "text", text: USER_PROMPT },
+          ],
+        },
+      ],
+    }),
+  });
+  if (!resp.ok) throw new Error(`API ${resp.status} ${resp.statusText}`);
+  const data = await resp.json();
+  const text = data.choices?.[0]?.message?.content ?? data.content?.[0]?.text ?? "";
+  return String(text).replace(/```json\n?/gi, "").replace(/```\n?/g, "").trim();
+}
+
+// ── transcription request (parallel, ordered output, retried) ─────────────────
+async function transcribeAudio(float32, seq) {
   if (!config.apiKey) {
     showView("Config");
+    settleOrdered(seq, ""); // don't block later utterances
     return;
   }
   const base64 = float32ToWavBase64(float32, 16000);
-  let failed = false;
 
   // TEMP: dump the exact WAV being sent, for manual inspection (see tmp/next.md)
   if (DUMP_AUDIO) {
@@ -314,60 +374,49 @@ async function transcribeAudio(float32) {
 
   activeApiCount++;
   refreshStatus();
-  log(`sending ${Math.round(base64.length / 1024)}KB (b64) to ${config.model}`);
-  try {
-    const resp = await fetch(config.endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: config.model,
-        temperature: 0.2,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          {
-            role: "user",
-            content: [
-              { type: "input_audio", input_audio: { data: base64, format: "wav" } },
-              { type: "text", text: USER_PROMPT },
-            ],
-          },
-        ],
-      }),
-    });
-    if (!resp.ok) throw new Error(`API ${resp.status} ${resp.statusText}`);
-    const data = await resp.json();
-    const text =
-      data.choices?.[0]?.message?.content ?? data.content?.[0]?.text ?? "";
-    const cleaned = String(text)
-      .replace(/```json\n?/gi, "")
-      .replace(/```\n?/g, "")
-      .trim();
-    if (cleaned) {
-      log(`response: ${cleaned.length} chars — ${JSON.stringify(cleaned.slice(0, 80))}`);
-      completedTotal++;
-      appendTranscript(cleaned);
-    } else {
-      // model returned nothing — this is the "audio dropped, no transcript" case
-      log("response EMPTY — model returned no text; nothing appended");
-      completedTotal++;
-    }
-  } catch (err) {
-    console.error("transcription error:", err);
-    log("transcription ERROR:", String(err));
-    failed = true;
-  } finally {
-    activeApiCount = Math.max(0, activeApiCount - 1);
-    if (failed) {
-      // surface the failure briefly, then fall back to the live state
-      setStatus("error");
-      setTimeout(refreshStatus, 2500);
-    } else {
-      refreshStatus();
+  log(`sending ${Math.round(base64.length / 1024)}KB (b64) to ${config.model} [#${seq}]`);
+
+  // Up to config.maxRetries retries (maxRetries + 1 attempts total) with
+  // exponential backoff: 1s, 2s, 4s, 8s, … between attempts.
+  const maxRetries = config.maxRetries;
+  let cleaned = null;
+  let lastErr = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      cleaned = await postTranscription(base64);
+      break;
+    } catch (err) {
+      lastErr = err;
+      console.error("transcription error:", err);
+      log(`transcription ERROR [#${seq}] attempt ${attempt + 1}/${maxRetries + 1}: ${String(err)}`);
+      if (attempt < maxRetries) {
+        const backoff = 1000 * 2 ** attempt; // 1s, 2s, 4s, 8s, …
+        log(`retrying [#${seq}] in ${backoff}ms`);
+        await sleep(backoff);
+      }
     }
   }
+
+  activeApiCount = Math.max(0, activeApiCount - 1);
+
+  if (cleaned === null) {
+    // all attempts exhausted — settle empty so later utterances still flush
+    log(`transcription FAILED [#${seq}] after ${maxRetries + 1} attempts: ${String(lastErr)}`);
+    settleOrdered(seq, "");
+    setStatus("error");
+    setTimeout(refreshStatus, 2500);
+    return;
+  }
+
+  if (cleaned) {
+    log(`response [#${seq}]: ${cleaned.length} chars — ${JSON.stringify(cleaned.slice(0, 80))}`);
+  } else {
+    // model returned nothing — the "audio dropped, no transcript" case
+    log(`response EMPTY [#${seq}] — model returned no text`);
+  }
+  completedTotal++;
+  settleOrdered(seq, cleaned);
+  refreshStatus();
 }
 
 // ── recording control ────────────────────────────────────────────────────────
@@ -386,10 +435,11 @@ async function startRecording() {
         },
         onSpeechEnd: (audio) => {
           const ms = Math.round((audio.length / 16000) * 1000);
+          const seq = capturedTotal; // 0-based capture order, drives ordered output
           capturedTotal++;
           log(`speech end — ${ms}ms (${audio.length} samples @16kHz), captured #${capturedTotal}`);
           refreshStatus();
-          transcribeAudio(audio);
+          transcribeAudio(audio, seq);
         },
         onVADMisfire: () => {
           log("VAD misfire (too short)");
@@ -497,9 +547,15 @@ function wire() {
   });
 }
 
+// drive the window glass opacity from config (see --glass-opacity in styles.css)
+function applyOpacity() {
+  document.documentElement.style.setProperty("--glass-opacity", String(config.opacity));
+}
+
 async function init() {
   loadConfig();
   await loadFileConfig(); // ~/.config/transcriber/config.yaml overrides defaults
+  applyOpacity();
   clearTranscript(); // always start from an empty transcript on launch
   wire();
   resetViz();
