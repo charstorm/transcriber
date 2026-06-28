@@ -32,16 +32,21 @@ fn log_init() -> Result<String, String> {
     Ok(path.to_string_lossy().to_string())
 }
 
+// Best-effort append to the session log; usable from both the command and from
+// Rust-internal callers (e.g. the paste flow) so backend events show up in the
+// same ~/.cache/transcriber/transcriber.log the frontend writes to.
+fn append_log(line: &str) {
+    use std::io::Write;
+    if let Some(path) = log_file_path() {
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            let _ = writeln!(f, "{}", line);
+        }
+    }
+}
+
 #[tauri::command]
 fn log_append(line: String) -> Result<(), String> {
-    use std::io::Write;
-    let path = log_file_path().ok_or("no cache dir")?;
-    let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .map_err(|e| e.to_string())?;
-    writeln!(f, "{}", line).map_err(|e| e.to_string())?;
+    append_log(&line);
     Ok(())
 }
 
@@ -68,6 +73,203 @@ fn load_config() -> Result<serde_json::Value, String> {
     serde_yaml::from_str(&text).map_err(|e| e.to_string())
 }
 
+// ── auto-paste ───────────────────────────────────────────────────────────────
+// Load the transcript onto the clipboard and fire a paste keystroke into
+// whatever window has focus. Mirrors reshka's proven Wayland flow: `wl-copy`
+// holds the clipboard, then a detached `ydotool` presses the paste key after a
+// short delay so focus can return to the previously-focused app first.
+//
+// Linux/Wayland only for now. Every failure returns a descriptive Err so the UI
+// can show the user exactly which tool is missing / what to do.
+
+#[cfg(target_os = "linux")]
+fn which(bin: &str) -> Option<std::path::PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(bin))
+        .find(|p| p.is_file())
+}
+
+// Is a process with this exact comm name running? (comm is truncated to 15
+// chars by the kernel, so only pass short names like "ydotoold".)
+#[cfg(target_os = "linux")]
+fn proc_running(name: &str) -> bool {
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        if let Ok(comm) = std::fs::read_to_string(entry.path().join("comm")) {
+            if comm.trim() == name {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+// Locate the ydotoold control socket so we can pass it to ydotool explicitly
+// (its default search path varies by version/distro; being explicit avoids a
+// silent "couldn't connect" no-op).
+#[cfg(target_os = "linux")]
+fn ydotool_socket() -> Option<std::path::PathBuf> {
+    if let Ok(s) = std::env::var("YDOTOOL_SOCKET") {
+        if !s.is_empty() {
+            return Some(s.into());
+        }
+    }
+    if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
+        let p = std::path::Path::new(&xdg).join(".ydotool_socket");
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    let tmp = std::path::PathBuf::from("/tmp/.ydotool_socket");
+    if tmp.exists() {
+        return Some(tmp);
+    }
+    None
+}
+
+// Whitelist the paste key: names joined by '+', alphanumerics only. The key is
+// passed to ydotool as a separate argv (no shell), but we validate anyway so a
+// malformed config value fails loudly instead of silently misfiring.
+#[cfg(target_os = "linux")]
+fn valid_paste_key(k: &str) -> bool {
+    !k.is_empty()
+        && k.len() <= 64
+        && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '+')
+}
+
+// Returns Ok(()) when auto-paste can work right now, else a user-facing reason.
+#[cfg(target_os = "linux")]
+fn linux_paste_check() -> Result<(), String> {
+    let wayland = std::env::var("WAYLAND_DISPLAY")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false);
+    if !wayland {
+        return Err(
+            "Auto-paste currently requires a Wayland session (XDG_SESSION_TYPE=wayland)."
+                .into(),
+        );
+    }
+    let mut missing = Vec::new();
+    if which("wl-copy").is_none() {
+        missing.push("wl-copy (package: wl-clipboard)");
+    }
+    if which("ydotool").is_none() {
+        missing.push("ydotool");
+    }
+    if !missing.is_empty() {
+        return Err(format!(
+            "Missing tool(s): {}. Install them (e.g. `sudo apt install wl-clipboard ydotool`), then try again.",
+            missing.join(", ")
+        ));
+    }
+    if !proc_running("ydotoold") {
+        return Err(
+            "ydotoold is not running. Start it (`systemctl --user start ydotool` or run `ydotoold &`), then try again."
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+// Report whether auto-paste is usable, with a message describing why not. Called
+// at startup so the UI can warn before the user relies on it.
+#[tauri::command]
+fn paste_diagnostics() -> serde_json::Value {
+    #[cfg(target_os = "linux")]
+    {
+        match linux_paste_check() {
+            Ok(()) => serde_json::json!({ "available": true, "message": "" }),
+            Err(e) => serde_json::json!({ "available": false, "message": e }),
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        serde_json::json!({
+            "available": false,
+            "message": "Auto-paste is only implemented on Linux for now."
+        })
+    }
+}
+
+#[tauri::command]
+fn paste_transcript(
+    text: String,
+    paste_key: String,
+    delay_ms: Option<u64>,
+) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::{Command, Stdio};
+
+        linux_paste_check()?;
+        if !valid_paste_key(&paste_key) {
+            return Err(format!(
+                "Invalid paste_key '{paste_key}'. Use names joined by '+', e.g. ctrl+v or ctrl+shift+v."
+            ));
+        }
+        let delay = delay_ms.unwrap_or(800).min(10_000);
+        let socket = ydotool_socket();
+        append_log(&format!(
+            "[paste] begin: {} chars, key={}, delay={}ms, socket={:?}",
+            text.len(),
+            paste_key,
+            delay,
+            socket
+        ));
+
+        // 1. Load the clipboard. wl-copy forks a daemon that keeps serving the
+        //    data after we exit, so waiting here just confirms it's loaded.
+        let status = Command::new("wl-copy")
+            .arg("--")
+            .arg(&text)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map_err(|e| {
+                append_log(&format!("[paste] wl-copy spawn failed: {e}"));
+                format!("failed to run wl-copy: {e}")
+            })?;
+        if !status.success() {
+            append_log("[paste] wl-copy exited non-zero");
+            return Err("wl-copy failed to set the clipboard.".into());
+        }
+        append_log("[paste] clipboard loaded");
+
+        // 2. Fire the paste keystroke in a NEW SESSION (setsid) so it fully
+        //    outlives this app — the window closes right after, and the keystroke
+        //    must still fire ~delay ms later. ydotool's own --delay does the
+        //    waiting (giving focus time to return to the previous window), and
+        //    YDOTOOL_SOCKET is set explicitly so it always finds ydotoold.
+        let mut cmd = Command::new("setsid");
+        cmd.arg("ydotool")
+            .arg("key")
+            .arg("--delay")
+            .arg(delay.to_string())
+            .arg(&paste_key)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        if let Some(s) = &socket {
+            cmd.env("YDOTOOL_SOCKET", s);
+        }
+        cmd.spawn().map_err(|e| {
+            append_log(&format!("[paste] ydotool spawn failed: {e}"));
+            format!("failed to run ydotool: {e}")
+        })?;
+        append_log("[paste] ydotool spawned (setsid, detached)");
+        Ok(())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (text, paste_key, delay_ms);
+        Err("Auto-paste is only implemented on Linux for now.".into())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -76,7 +278,9 @@ pub fn run() {
             dump_wav,
             log_init,
             log_append,
-            load_config
+            load_config,
+            paste_diagnostics,
+            paste_transcript
         ])
         .setup(|app| {
             // On Linux, WebKitGTK denies getUserMedia (microphone) by default.

@@ -1,27 +1,24 @@
 :root {
-  /* Aurora — frosted glass palette */
-  /* overall window opacity (0 = transparent, 1 = opaque); set at runtime from
-     config (applyOpacity in app.js). The gradient keeps a subtle ±0.05 spread. */
-  --glass-opacity: 0.5;
-  --glass-1: rgba(20, 24, 40, calc(var(--glass-opacity) - 0.05));
-  --glass-2: rgba(12, 14, 26, calc(var(--glass-opacity) + 0.05));
-  /* the transcript panel gets its own near-solid backing so text stays crisp
-     regardless of how transparent the window glass is (set from config). */
-  --transcript-opacity: 0.95;
-  --inset: rgba(0, 0, 0, 0.22);
+  /* Neutral grayscale palette — black & gray, no color tints. Red is kept only
+     for functional states (errors, recording). Solid/opaque (no transparency). */
+  --glass-1: #1c1c1c;
+  --glass-2: #121212;
+  --transcript-bg: #0d0d0d;
+  --inset: rgba(0, 0, 0, 0.3);
   --border: rgba(255, 255, 255, 0.1);
   --border-soft: rgba(255, 255, 255, 0.06);
   --hairline: rgba(255, 255, 255, 0.07);
-  --text: #e8eaf4;
-  --text-bright: #f6f8ff;
-  --text-dim: #aab0cc;
-  --accent: #4be1c6;
-  --accent-2: #6e8cff;
-  --danger: #ff5d73;
-  --green: #4be1c6;
-  --yellow: #f9e2af;
+  --text: #e6e6e6;
+  --text-bright: #f5f5f5;
+  --text-dim: #9a9a9a;
+  /* "accent" is just a bright neutral now — used for active/listening/viz */
+  --accent: #cfcfcf;
+  --accent-2: #9a9a9a;
+  --danger: #ff5a5a;
+  --green: #cfcfcf;
+  --yellow: #bdbdbd;
   --radius: 12px;
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: "Ubuntu Sans", "Ubuntu", system-ui, sans-serif;
   color-scheme: dark;
 }
 
@@ -35,18 +32,14 @@ body {
   height: 100%;
 }
 
-/* the window itself is transparent (Tauri) — html stays clear so the OS
-   compositor shows the desktop behind the frosted body. The glass fills the
-   window edge-to-edge: no gutter/shadow halo (it read as a low-quality border). */
+/* opaque window — no transparency/blur (removed for load speed). */
 html {
-  background: transparent;
+  background: var(--glass-2);
 }
 
-/* body IS the glass window surface */
+/* body IS the window surface (solid) */
 body {
   background: linear-gradient(160deg, var(--glass-1), var(--glass-2));
-  backdrop-filter: blur(28px) saturate(150%);
-  -webkit-backdrop-filter: blur(28px) saturate(150%);
   border: 1px solid var(--border);
   /* square corners: GNOME/Wayland draws a rectangular window shadow that can't
      be disabled on Linux, so rounded corners leave a visible square overlay.
@@ -100,7 +93,8 @@ body {
   background: transparent;
   color: var(--text-dim);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, transform 0.06s ease,
+    filter 0.06s ease;
 }
 
 .icon-btn:hover {
@@ -170,6 +164,37 @@ body {
   font-weight: 600;
 }
 
+/* API-key-missing banner — the app can't be used without a key, so make it
+   prominent (solid danger fill). */
+.api-warn {
+  margin-bottom: 8px;
+  padding: 9px 11px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #fff;
+  background: var(--danger);
+  border-radius: var(--radius);
+}
+.api-warn.hidden {
+  display: none;
+}
+
+/* auto-paste unavailable banner (tools missing, etc.) */
+.paste-warn {
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--danger);
+  background: rgba(255, 93, 115, 0.1);
+  border: 1px solid rgba(255, 93, 115, 0.4);
+  border-radius: var(--radius);
+}
+.paste-warn.hidden {
+  display: none;
+}
+
 /* ── transcript view (controls BELOW the transcript) ──────────── */
 .ta-wrap {
   flex: 1;
@@ -177,7 +202,7 @@ body {
   display: flex;
   border-radius: var(--radius);
   padding: 12px;
-  background: rgba(10, 12, 22, var(--transcript-opacity));
+  background: var(--transcript-bg);
   border: 1px solid var(--border-soft);
 }
 
@@ -191,7 +216,7 @@ body {
   color: var(--text-bright);
   font-size: 14px;
   line-height: 1.6;
-  font-family: "Cascadia Code", ui-monospace, "SF Mono", monospace;
+  font-family: "Ubuntu Sans", "Ubuntu", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   user-select: text;
   outline: none;
@@ -260,7 +285,7 @@ body {
 }
 .stat.busy {
   color: var(--yellow);
-  border-color: rgba(249, 226, 175, 0.35);
+  border-color: rgba(255, 255, 255, 0.28);
 }
 .stat.busy .spin {
   opacity: 1;
@@ -294,26 +319,33 @@ body {
   padding: 8px 16px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 999px;
-  background: linear-gradient(135deg, rgba(75, 225, 198, 0.16), rgba(110, 140, 255, 0.16));
-  color: #d6f7f0;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.18s;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s,
+    transform 0.06s ease, filter 0.06s ease;
 }
 .pill:hover {
-  border-color: rgba(75, 225, 198, 0.5);
-  box-shadow: 0 0 20px -6px rgba(75, 225, 198, 0.6);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.28);
 }
 .pill.solid {
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #04222a;
+  background: #d8d8d8;
+  color: #141414;
   border-color: transparent;
 }
+.pill.solid:hover {
+  background: #ececec;
+}
 .pill.active {
-  background: linear-gradient(135deg, rgba(255, 93, 115, 0.22), rgba(255, 140, 90, 0.18));
-  color: #ffd9df;
-  border-color: rgba(255, 93, 115, 0.45);
+  background: rgba(255, 90, 90, 0.18);
+  color: #ffcaca;
+  border-color: rgba(255, 90, 90, 0.45);
+}
+.pill.active:hover {
+  background: rgba(255, 90, 90, 0.26);
 }
 .rec-icon {
   width: 8px;
@@ -338,6 +370,19 @@ body {
 .mini-btn:hover {
   color: #fff;
   background: rgba(255, 255, 255, 0.12);
+}
+
+/* ── press / active feedback (all buttons) ────────────────────
+   Buttons visibly depress when clicked: nudge down + scale in slightly + a
+   quick darken, so a press reads clearly. */
+.icon-btn:active,
+.pill:active,
+.mini-btn:active {
+  transform: translateY(1px) scale(0.96);
+  filter: brightness(0.85);
+}
+.icon-btn:active {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 /* ── config form ──────────────────────────────────────────── */
@@ -368,7 +413,7 @@ input[type="password"] {
   user-select: text;
 }
 input:focus {
-  border-color: rgba(75, 225, 198, 0.5);
+  border-color: rgba(255, 255, 255, 0.4);
 }
 input[type="checkbox"] {
   width: 15px;
@@ -388,6 +433,10 @@ input[type="checkbox"] {
   color: var(--green);
   font-size: 12px;
   min-height: 14px;
+}
+.save-status.error {
+  color: var(--danger);
+  font-weight: 600;
 }
 
 /* ── shortcuts view ───────────────────────────────────────── */
@@ -425,5 +474,5 @@ kbd {
 }
 
 ::selection {
-  background: rgba(75, 225, 198, 0.3);
+  background: rgba(255, 255, 255, 0.22);
 }

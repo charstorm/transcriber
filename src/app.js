@@ -37,15 +37,17 @@ const DEFAULTS = {
   model: "mistralai/voxtral-small-24b-2507",
   autoRecord: true,
   autoCopy: true,
+  // paste the transcript into the previously-focused app on close (Linux/Wayland
+  // only; requires wl-copy + ydotool + ydotoold — see paste_diagnostics).
+  autoPaste: true,
+  // key sequence ydotool presses to paste. ctrl+shift+v works in terminals and
+  // most GUI apps; plain ctrl+v is a no-op in terminals.
+  pasteKey: "ctrl+shift+v",
+  // delay before the paste keystroke fires, so focus returns to the prior app.
+  pasteDelayMs: 800,
   // retries on a failed transcription request (total attempts = maxRetries + 1),
   // with exponential backoff (1s, 2s, 4s, 8s …) between them.
   maxRetries: 3,
-  // window glass opacity (0 = fully transparent, 1 = opaque). Lower = see more
-  // of the desktop behind the app.
-  opacity: 0.5,
-  // transcript panel opacity — kept near-solid so text stays readable even when
-  // the window glass is very transparent.
-  transcriptOpacity: 0.95,
 };
 
 const SYSTEM_PROMPT =
@@ -92,6 +94,10 @@ function buildVadConfig() {
 }
 
 let config = { ...DEFAULTS };
+// auto-paste capability, resolved at startup from the Rust paste_diagnostics
+// command. pasteMessage explains why it's unavailable (missing tool, etc.).
+let pasteAvailable = false;
+let pasteMessage = "";
 let vadInstance = null;
 let isRecording = false;
 let activeApiCount = 0; // requests currently in flight
@@ -177,12 +183,14 @@ async function loadFileConfig() {
 
   const str = (x) => (typeof x === "string" && x.trim() ? x.trim() : undefined);
   const num = (x) => (typeof x === "number" && isFinite(x) ? x : undefined);
+  const bool = (x) => (typeof x === "boolean" ? x : undefined);
   if (str(file.model)) config.model = str(file.model);
   if (str(file.endpoint)) config.endpoint = str(file.endpoint);
   if (str(file.api_key)) config.apiKey = str(file.api_key);
   if (num(file.max_retries) !== undefined) config.maxRetries = Math.max(0, Math.round(num(file.max_retries)));
-  if (num(file.opacity) !== undefined) config.opacity = Math.min(1, Math.max(0, num(file.opacity)));
-  if (num(file.transcript_opacity) !== undefined) config.transcriptOpacity = Math.min(1, Math.max(0, num(file.transcript_opacity)));
+  if (bool(file.auto_paste) !== undefined) config.autoPaste = bool(file.auto_paste);
+  if (str(file.paste_key)) config.pasteKey = str(file.paste_key);
+  if (num(file.paste_delay_ms) !== undefined) config.pasteDelayMs = Math.max(0, Math.round(num(file.paste_delay_ms)));
 
   const v = file.vad;
   if (v && typeof v === "object") {
@@ -200,22 +208,24 @@ async function loadFileConfig() {
   }
   log("config.yaml applied:", JSON.stringify({
     model: config.model, maxRetries: config.maxRetries,
-    opacity: config.opacity, transcriptOpacity: config.transcriptOpacity, vad: vadParams,
+    autoPaste: config.autoPaste, pasteKey: config.pasteKey, pasteDelayMs: config.pasteDelayMs,
+    vad: vadParams,
   }));
 }
 
 function saveConfig() {
+  // Merge over the current config so file-derived keys (paste_key, VAD…) aren't
+  // wiped by saving the form, which only manages a handful of fields.
   config = {
+    ...config,
     endpoint: $("cfgEndpoint").value.trim() || DEFAULTS.endpoint,
     apiKey: $("cfgApiKey").value.trim(),
     model: $("cfgModel").value.trim() || DEFAULTS.model,
     autoRecord: $("cfgAutoRecord").checked,
     autoCopy: $("cfgAutoCopy").checked,
+    autoPaste: $("cfgAutoPaste").checked,
   };
   localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
-  const s = $("cfgStatus");
-  s.textContent = "Saved.";
-  setTimeout(() => (s.textContent = ""), 2000);
 }
 
 function fillConfigForm() {
@@ -224,6 +234,7 @@ function fillConfigForm() {
   $("cfgModel").value = config.model;
   $("cfgAutoRecord").checked = config.autoRecord;
   $("cfgAutoCopy").checked = config.autoCopy;
+  $("cfgAutoPaste").checked = config.autoPaste;
 }
 
 // ── view switching ────────────────────────────────────────────────────────────
@@ -429,6 +440,10 @@ async function startRecording() {
   if (isRecording) return;
   try {
     if (!vadInstance) {
+      // VAD/ONNX init is the heaviest startup cost — time it so we can see how
+      // much of "load delay" is the model/WASM coming up.
+      const vt0 = performance.now();
+      log("[load] VAD init start");
       vadInstance = await MicVAD.new({
         ...buildVadConfig(),
         baseAssetPath: "/vad/",
@@ -454,6 +469,7 @@ async function startRecording() {
           if (frame) renderViz(frameRms(frame));
         },
       });
+      log(`[load] VAD ready in ${Math.round(performance.now() - vt0)}ms`);
     }
     vadInstance.start();
     isRecording = true;
@@ -488,14 +504,65 @@ function toggleRecording() {
   isRecording ? stopRecording() : startRecording();
 }
 
-// ── close (with auto-copy) ────────────────────────────────────────────────────
+// ── close (with auto-paste / auto-copy) ───────────────────────────────────────
+// On close we either paste the transcript into the previously-focused app
+// (auto-paste, the primary flow) or just copy it to the clipboard. Pasting also
+// loads the clipboard, so an auto-paste implicitly satisfies auto-copy too.
 async function closeApp() {
-  try {
-    if (config.autoCopy) await copyTranscript();
-  } catch (err) {
-    console.error("auto-copy failed:", err);
+  const text = transcriptEl.value.trim();
+  log(`close: ${text.length} chars, autoPaste=${config.autoPaste}, pasteAvailable=${pasteAvailable}, autoCopy=${config.autoCopy}`);
+  if (text && config.autoPaste && pasteAvailable) {
+    try {
+      // Yield focus back to the previous window before the keystroke fires.
+      log("close: hiding window for auto-paste");
+      await getCurrentWindow().hide();
+      await invoke("paste_transcript", {
+        text,
+        pasteKey: config.pasteKey,
+        delayMs: config.pasteDelayMs,
+      });
+      log("close: paste_transcript invoked ok");
+      // brief beat so the detached ydotool is fully spawned before we exit
+      await sleep(150);
+    } catch (err) {
+      console.error("auto-paste failed:", err);
+      log("auto-paste failed:", String(err));
+      // don't lose the text — fall back to the clipboard
+      try { await copyTranscript(); } catch {}
+    }
+  } else if (text && config.autoCopy) {
+    try {
+      await copyTranscript();
+    } catch (err) {
+      console.error("auto-copy failed:", err);
+    }
   }
   await getCurrentWindow().close();
+}
+
+function showPasteWarning(msg) {
+  const el = $("pasteWarn");
+  if (!el) return;
+  el.textContent = "⚠ Auto-paste disabled — " + msg;
+  el.classList.remove("hidden");
+}
+
+function hasApiKey() {
+  return !!(config.apiKey && config.apiKey.trim());
+}
+
+// Show/hide the "API key not set" banner depending on whether a key is present.
+// Without a key the app can't transcribe, so this is a hard requirement.
+function updateApiWarning() {
+  const el = $("apiWarn");
+  if (!el) return;
+  if (hasApiKey()) {
+    el.classList.add("hidden");
+  } else {
+    el.textContent =
+      "⚠ API key not set — open Configuration (gear icon) and add your key. The app can't transcribe until then.";
+    el.classList.remove("hidden");
+  }
 }
 
 // ── keyboard shortcuts (in-app, fixed) ────────────────────────────────────────
@@ -535,6 +602,20 @@ function wire() {
   $("btnConfigSave").addEventListener("click", () => {
     saveConfig();
     fillConfigForm();
+    updateApiWarning();
+    const s = $("cfgStatus");
+    if (hasApiKey()) {
+      // saved & usable — close the config view automatically and (re)start
+      // recording if it isn't already running.
+      s.textContent = "";
+      s.classList.remove("error");
+      showView("Transcript");
+      if (config.autoRecord && !isRecording) setTimeout(startRecording, 200);
+    } else {
+      // keep them here; make it unmistakable why the view didn't close.
+      s.textContent = "Saved — but an API key is required before the app can be used.";
+      s.classList.add("error");
+    }
   });
   $("btnToggleRec").addEventListener("click", toggleRecording);
   $("btnCopy").addEventListener("click", copyTranscript);
@@ -552,25 +633,54 @@ function wire() {
   });
 }
 
-// drive the window glass opacity from config (see --glass-opacity in styles.css)
-function applyOpacity() {
-  const root = document.documentElement.style;
-  root.setProperty("--glass-opacity", String(config.opacity));
-  root.setProperty("--transcript-opacity", String(config.transcriptOpacity));
-}
-
 async function init() {
+  // load-time instrumentation: measure each startup phase so we can target the
+  // real bottleneck (see also the VAD-init timing in startRecording).
+  const t0 = performance.now();
+  const since = () => `${Math.round(performance.now() - t0)}ms`;
+
+  // Truncate + open a fresh log file FIRST so the early config/diagnostic lines
+  // below are actually captured (log_init wipes the file — anything logged
+  // before it ran would be lost).
+  try {
+    const path = await invoke("log_init");
+    log("=== transcriber session start — log at", path);
+  } catch (e) {
+    console.error("log_init failed:", e);
+  }
+
   loadConfig();
   await loadFileConfig(); // ~/.config/transcriber/config.yaml overrides defaults
-  applyOpacity();
+  log(`[load] config ready @ ${since()}`);
+
+  // resolve auto-paste capability; warn (don't crash) if enabled but unusable so
+  // the user knows to install the required tools.
+  try {
+    const diag = await invoke("paste_diagnostics");
+    pasteAvailable = !!diag?.available;
+    pasteMessage = diag?.message || "";
+  } catch (e) {
+    pasteAvailable = false;
+    pasteMessage = String(e);
+  }
+  log("auto-paste:", pasteAvailable ? "available" : `unavailable — ${pasteMessage}`);
+  if (config.autoPaste && !pasteAvailable) showPasteWarning(pasteMessage);
+
   clearTranscript(); // always start from an empty transcript on launch
   wire();
   resetViz();
-  // truncate + open a fresh log file for this session
-  invoke("log_init")
-    .then((path) => log("=== transcriber session start — log at", path))
-    .catch((e) => console.error("log_init failed:", e));
   setStatus("idle");
+  updateApiWarning();
+  log(`[load] UI wired @ ${since()}`);
+  requestAnimationFrame(() => log(`[load] first paint @ ${since()}`));
+
+  // The app is unusable without an API key. If it's missing, drop the user
+  // straight into Config with a clear banner and DON'T start recording.
+  if (!hasApiKey()) {
+    log("no API key set — opening Config, recording disabled");
+    showView("Config");
+    return;
+  }
   if (config.autoRecord) {
     // small delay so the window paints before the mic/VAD spins up
     setTimeout(startRecording, 300);
