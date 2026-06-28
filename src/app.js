@@ -338,6 +338,20 @@ function settleOrdered(seq, text) {
   }
 }
 
+// Reset all per-session bookkeeping to a clean slate. Resets the visible
+// counters AND the ordered-output state together — the seq counter (capturedTotal)
+// feeds nextToFlush/pendingResults, so zeroing one without the others would
+// desync ordering. Any straggler request from a prior session that settles after
+// this is harmless: its slot is simply dropped.
+function resetSession() {
+  activeApiCount = 0;
+  capturedTotal = 0;
+  completedTotal = 0;
+  nextToFlush = 0;
+  pendingResults.clear();
+  updateQueue();
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // One transcription HTTP call. Throws on a non-OK response so the retry loop
@@ -586,6 +600,7 @@ async function pasteTranscript() {
 async function hideApp() {
   await pasteTranscript();
   stopRecording(); // releases the mic + resets recording state/UI
+  resetSession(); // zero the counters/ordering for the next dictation
   await getCurrentWindow().hide();
   log("hidden (resident)");
 }
@@ -603,6 +618,7 @@ async function quitApp() {
 async function onWake() {
   log("wake: re-trigger");
   clearTranscript();
+  resetSession();
   resetViz();
   if (!hasApiKey()) {
     showView("Config");
