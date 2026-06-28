@@ -42,7 +42,10 @@ const DEFAULTS = {
   maxRetries: 3,
   // window glass opacity (0 = fully transparent, 1 = opaque). Lower = see more
   // of the desktop behind the app.
-  opacity: 0.6,
+  opacity: 0.5,
+  // transcript panel opacity — kept near-solid so text stays readable even when
+  // the window glass is very transparent.
+  transcriptOpacity: 0.95,
 };
 
 const SYSTEM_PROMPT =
@@ -179,6 +182,7 @@ async function loadFileConfig() {
   if (str(file.api_key)) config.apiKey = str(file.api_key);
   if (num(file.max_retries) !== undefined) config.maxRetries = Math.max(0, Math.round(num(file.max_retries)));
   if (num(file.opacity) !== undefined) config.opacity = Math.min(1, Math.max(0, num(file.opacity)));
+  if (num(file.transcript_opacity) !== undefined) config.transcriptOpacity = Math.min(1, Math.max(0, num(file.transcript_opacity)));
 
   const v = file.vad;
   if (v && typeof v === "object") {
@@ -195,7 +199,8 @@ async function loadFileConfig() {
     }
   }
   log("config.yaml applied:", JSON.stringify({
-    model: config.model, maxRetries: config.maxRetries, opacity: config.opacity, vad: vadParams,
+    model: config.model, maxRetries: config.maxRetries,
+    opacity: config.opacity, transcriptOpacity: config.transcriptOpacity, vad: vadParams,
   }));
 }
 
@@ -549,7 +554,9 @@ function wire() {
 
 // drive the window glass opacity from config (see --glass-opacity in styles.css)
 function applyOpacity() {
-  document.documentElement.style.setProperty("--glass-opacity", String(config.opacity));
+  const root = document.documentElement.style;
+  root.setProperty("--glass-opacity", String(config.opacity));
+  root.setProperty("--transcript-opacity", String(config.transcriptOpacity));
 }
 
 async function init() {

@@ -10,7 +10,11 @@ model: mistralai/voxtral-small-24b-2507
 
 # Window glass opacity: 0 = fully transparent, 1 = opaque. Lower = see more of
 # the desktop behind the app.
-opacity: 0.6
+opacity: 0.5
+
+# Transcript panel opacity — kept near-solid (independent of the window glass)
+# so transcribed text stays readable.
+transcript_opacity: 0.95
 
 # Retries on a failed transcription request. Total attempts = max_retries + 1,
 # with exponential backoff (1s, 2s, 4s, 8s …) between attempts.
@@ -23,8 +27,9 @@ vad:
   positive_speech_threshold: 0.5
   # Confidence (0–1) below which speech is considered ENDED.
   negative_speech_threshold: 0.35
-  # Silence required before an utterance is finished (500–700ms is reasonable).
-  silence_ms: 500
+  # Silence required before an utterance is finished. Higher = mid-sentence
+  # pauses don't cut you off (but utterances finalize a bit later).
+  silence_ms: 800
   # Minimum speech length to count as a valid utterance. Lower lets short
   # phrases through; too low also lets coughs/clicks through.
   min_speech_ms: 250
