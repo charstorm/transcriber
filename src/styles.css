@@ -223,10 +223,11 @@ body {
 }
 
 /* in-flight / queue indicator chip */
-.queue-chip {
+/* fixed-width status slots — width stays constant as counts update */
+.stat {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   font-size: 11.5px;
   color: var(--text-dim);
   padding: 4px 9px;
@@ -236,18 +237,27 @@ body {
   white-space: nowrap;
   transition: color 0.2s, border-color 0.2s;
 }
-.queue-chip:empty {
-  display: none;
+.stat .num {
+  font-variant-numeric: tabular-nums;
+  min-width: 1.1em;
+  text-align: right;
+  font-weight: 600;
+  color: var(--text);
 }
-.queue-chip.busy {
-  color: var(--yellow);
-  border-color: rgba(249, 226, 175, 0.35);
-}
-.queue-chip .spin {
+/* the spinner dot only belongs to the "active" slot; idle = dim and still */
+.stat .spin {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: currentColor;
+  opacity: 0.3;
+}
+.stat.busy {
+  color: var(--yellow);
+  border-color: rgba(249, 226, 175, 0.35);
+}
+.stat.busy .spin {
+  opacity: 1;
   animation: pulse 1s ease-in-out infinite;
 }
 

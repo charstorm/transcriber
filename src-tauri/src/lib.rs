@@ -45,11 +45,39 @@ fn log_append(line: String) -> Result<(), String> {
     Ok(())
 }
 
+// ── user config at ~/.config/transcriber/config.yaml ─────────────────────────
+fn config_file_path() -> Option<std::path::PathBuf> {
+    let mut dir = dirs::config_dir()?;
+    dir.push("transcriber");
+    dir.push("config.yaml");
+    Some(dir)
+}
+
+// Read and parse the YAML config into a JSON value for the frontend. A missing
+// file is not an error — the frontend falls back to its built-in defaults.
+#[tauri::command]
+fn load_config() -> Result<serde_json::Value, String> {
+    let path = match config_file_path() {
+        Some(p) => p,
+        None => return Ok(serde_json::Value::Null),
+    };
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(_) => return Ok(serde_json::Value::Null),
+    };
+    serde_yaml::from_str(&text).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
-        .invoke_handler(tauri::generate_handler![dump_wav, log_init, log_append])
+        .invoke_handler(tauri::generate_handler![
+            dump_wav,
+            log_init,
+            log_append,
+            load_config
+        ])
         .setup(|app| {
             // On Linux, WebKitGTK denies getUserMedia (microphone) by default.
             // The transcriber is useless without the mic, so auto-grant the

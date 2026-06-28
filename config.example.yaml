@@ -1,0 +1,24 @@
+# Transcriber config — copy to ~/.config/transcriber/config.yaml
+# Any key may be omitted; omitted keys keep the built-in defaults.
+
+# Transcription model (OpenAI-compatible chat/completions).
+model: mistralai/voxtral-small-24b-2507
+
+# Optional: override endpoint / API key (otherwise taken from the in-app Config).
+# endpoint: https://openrouter.ai/api/v1/chat/completions
+# api_key: sk-...
+
+# Voice-activity-detection tuning. Timings are in milliseconds.
+vad:
+  # Confidence (0–1) for a frame to START speech. Lower = more sensitive, so
+  # soft/short phrases ("hello there") are picked up more readily.
+  positive_speech_threshold: 0.5
+  # Confidence (0–1) below which speech is considered ENDED.
+  negative_speech_threshold: 0.35
+  # Silence required before an utterance is finished (500–700ms is reasonable).
+  silence_ms: 500
+  # Minimum speech length to count as a valid utterance. Lower lets short
+  # phrases through; too low also lets coughs/clicks through.
+  min_speech_ms: 250
+  # Pre-roll prepended before detected speech so the first word isn't clipped.
+  pre_speech_pad_ms: 160

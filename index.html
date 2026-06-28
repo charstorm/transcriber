@@ -40,7 +40,12 @@
         <span class="viz" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
         <span class="status-text" id="statusText"></span>
         <div class="spacer"></div>
-        <span class="queue-chip" id="queueChip"></span>
+        <span class="stat" id="statActive" title="Transcriptions in progress">
+          <span class="spin"></span><b class="num" id="numActive">0</b><span class="lbl">active</span>
+        </span>
+        <span class="stat" id="statDone" title="Transcriptions completed">
+          <b class="num" id="numDone">0</b><span class="lbl">done</span>
+        </span>
         <button class="mini-btn" id="btnCopy" title="Copy (Ctrl+C)">Copy</button>
         <button class="mini-btn" id="btnClear" title="Clear (Ctrl+L)">Clear</button>
       </div>

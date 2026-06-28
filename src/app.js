@@ -50,19 +50,37 @@ const SYSTEM_PROMPT =
 const USER_PROMPT = "Transcribe the audio verbatim.";
 
 // Silero VAD tuning. v5 frame = 512 samples @16kHz ≈ 32ms.
-const VAD_CONFIG = {
+const FRAME_MS = 32;
+
+// Defaults are expressed in milliseconds (converted to frame counts when the
+// VAD is created) and are overridable via ~/.config/transcriber/config.yaml.
+const VAD_DEFAULTS = {
   positiveSpeechThreshold: 0.5,
   negativeSpeechThreshold: 0.35,
-  // silence required before an utterance is considered finished.
-  // 22 frames ≈ ~700ms — short pauses between clauses no longer split one
-  // utterance into several. (was 8 ≈ ~256ms, too aggressive.)
-  redemptionFrames: 22,
-  minSpeechFrames: 15,
-  // audio confirmed good, so the clipped onset is purely missing pre-roll:
-  // prepend ~5 frames (~160ms) before detected speech start so the first
-  // word isn't cut. (vad-web default is 1 frame ≈ 32ms.)
-  preSpeechPadFrames: 5,
+  // silence required before an utterance is considered finished. Short pauses
+  // between clauses no longer split one utterance into several.
+  silenceMs: 500,
+  // minimum speech length to count as a valid utterance. Lower = short phrases
+  // like "hello there" get through; too low also lets coughs/clicks through.
+  minSpeechMs: 250,
+  // pre-roll prepended before detected speech start so the first word isn't
+  // clipped. (vad-web default is 1 frame ≈ 32ms.)
+  preSpeechPadMs: 160,
 };
+let vadParams = { ...VAD_DEFAULTS };
+
+// Build the MicVAD options from the current (possibly file-overridden) params,
+// converting ms timings to frame counts.
+function buildVadConfig() {
+  const frames = (ms) => Math.max(1, Math.round(ms / FRAME_MS));
+  return {
+    positiveSpeechThreshold: vadParams.positiveSpeechThreshold,
+    negativeSpeechThreshold: vadParams.negativeSpeechThreshold,
+    redemptionFrames: frames(vadParams.silenceMs),
+    minSpeechFrames: frames(vadParams.minSpeechMs),
+    preSpeechPadFrames: frames(vadParams.preSpeechPadMs),
+  };
+}
 
 let config = { ...DEFAULTS };
 let vadInstance = null;
@@ -79,7 +97,9 @@ const transcriptEl = $("transcript");
 const recLabel = $("recLabel");
 const btnToggleRec = $("btnToggleRec");
 
-const queueChip = $("queueChip");
+const statActive = $("statActive");
+const numActive = $("numActive");
+const numDone = $("numDone");
 
 // human-readable label shown next to the visualizer per pipeline state
 const STATUS_LABELS = {
@@ -115,16 +135,12 @@ function resetViz() {
 }
 
 // ── queue / in-flight indicator ───────────────────────────────────────────────
+// Two fixed-width slots — counts live in tabular-nums spans so the slots never
+// change shape as numbers update. Both are always shown (0 is fine).
 function updateQueue() {
-  if (!queueChip) return;
-  if (activeApiCount > 0) {
-    queueChip.classList.add("busy");
-    queueChip.innerHTML =
-      `<span class="spin"></span>${activeApiCount} transcribing · ${completedTotal} done`;
-  } else {
-    queueChip.classList.remove("busy");
-    queueChip.textContent = capturedTotal ? `${completedTotal}/${capturedTotal} done` : "";
-  }
+  if (numActive) numActive.textContent = String(activeApiCount);
+  if (numDone) numDone.textContent = String(completedTotal);
+  if (statActive) statActive.classList.toggle("busy", activeApiCount > 0);
 }
 
 // ── config persistence ──────────────────────────────────────────────────────
@@ -135,6 +151,42 @@ function loadConfig() {
   } catch {
     config = { ...DEFAULTS };
   }
+}
+
+// Merge ~/.config/transcriber/config.yaml (parsed by Rust) over the in-app
+// defaults. A missing file or missing keys leave the defaults untouched. The
+// file is the source of truth for model/endpoint/key and VAD tuning.
+async function loadFileConfig() {
+  let file;
+  try {
+    file = await invoke("load_config");
+  } catch (e) {
+    log("config.yaml load failed:", String(e));
+    return;
+  }
+  if (!file || typeof file !== "object") return;
+
+  const str = (x) => (typeof x === "string" && x.trim() ? x.trim() : undefined);
+  if (str(file.model)) config.model = str(file.model);
+  if (str(file.endpoint)) config.endpoint = str(file.endpoint);
+  if (str(file.api_key)) config.apiKey = str(file.api_key);
+
+  const v = file.vad;
+  if (v && typeof v === "object") {
+    const num = (x) => (typeof x === "number" && isFinite(x) ? x : undefined);
+    const map = {
+      positive_speech_threshold: "positiveSpeechThreshold",
+      negative_speech_threshold: "negativeSpeechThreshold",
+      silence_ms: "silenceMs",
+      min_speech_ms: "minSpeechMs",
+      pre_speech_pad_ms: "preSpeechPadMs",
+    };
+    for (const [key, prop] of Object.entries(map)) {
+      const n = num(v[key]);
+      if (n !== undefined) vadParams[prop] = n;
+    }
+  }
+  log("config.yaml applied:", JSON.stringify({ model: config.model, vad: vadParams }));
 }
 
 function saveConfig() {
@@ -324,7 +376,7 @@ async function startRecording() {
   try {
     if (!vadInstance) {
       vadInstance = await MicVAD.new({
-        ...VAD_CONFIG,
+        ...buildVadConfig(),
         baseAssetPath: "/vad/",
         onnxWASMBasePath: "/vad/",
         model: "v5",
@@ -447,6 +499,7 @@ function wire() {
 
 async function init() {
   loadConfig();
+  await loadFileConfig(); // ~/.config/transcriber/config.yaml overrides defaults
   clearTranscript(); // always start from an empty transcript on launch
   wire();
   resetViz();
