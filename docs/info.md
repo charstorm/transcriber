@@ -47,10 +47,15 @@ A/B tested old-vs-new live (paste both, compare). Verdict: new now daily-usable,
 4. VAD: preSpeechPadMs 300->700 (recover clipped first word; v5 onset later than pysilero), silenceMs 700->980 (+40%, fewer mid-sentence cuts). Cost: ~0.3s later finalize.
 5. Transcript font 14->18px.
 
+## Work done 2026-06-29 session 3 (desktop icon + paste delay; NO repo code change)
+1. Dock icon fix (Linux/GNOME Wayland). Was generic gear: NO .desktop file matched the window. GNOME Wayland matches dock icon by Wayland app_id == .desktop filename basename (and StartupWMClass). KEY GOTCHA: window app_id is "transcriber" (productName/binary name), NOT the Tauri identifier "com.medrenova.transcriber". Confirmed via `WAYLAND_DEBUG=1 transcriber 2>&1 | grep set_app_id` -> set_app_id("transcriber"). (GNOME introspection — Shell.Eval, Introspect.GetWindows — is access-denied, can't query app_id that way; use WAYLAND_DEBUG or Looking Glass `lg`.)
+   FIX (all OUTSIDE repo, in ~/.local/share, not committed): icons installed as ~/.local/share/icons/hicolor/{32x32,128x128,256x256}/apps/transcriber.png (from src-tauri/icons/*.png); ~/.local/share/applications/transcriber.desktop with Icon=transcriber, StartupWMClass=transcriber, Exec=bash ~/scripts/start_apps.sh transcriber. Then update-desktop-database + gtk-update-icon-cache. App restart (not shell) picks it up. Icon currently = default Tauri logo; custom icon = future task (replace src-tauri/icons + re-install).
+2. Paste delay: prod ~/.config/transcriber/config.yaml paste_delay_ms 800->300 (user edited live; no rebuild — it's a config value passed to ydotool --delay). Code DEFAULT still 800 (app.js:~74) + config.example.yaml still 800 — left as-is per user.
+
 ## Remaining / next session
 1. Cutting STILL a bit aggressive occasionally (user-observed) even after VAD tune — vad-web Silero v5 vs native pysilero boundary diff is the root; may need further pad/silence tuning or a custom end-of-speech heuristic.
 2. int16 conversion rounding (app.js s*0x8000/0x7fff vs numpy cast) — minor, likely negligible.
-3. UX deferred (user explicitly "another time"): (a) "dock falling from top" open animation instead of normal app window; (b) color scheme improvement (current dark grayscale ok but not great).
+3. UX deferred (user explicitly "another time"): (a) "dock falling from top" open animation instead of normal app window; (b) color scheme improvement (current dark grayscale ok but not great); (c) custom app icon (currently default Tauri logo — replace src-tauri/icons/*.png then re-run the ~/.local/share icon+desktop install from session 3).
 
 ## Gotcha
 @ricky0123/vad-web bundles OWN nested onnxruntime-web@1.14.0. WASM in public/vad/ MUST come from that nested copy (scripts/copy-vad-assets.mjs handles via prebuild/predev). Version mismatch breaks inference.
