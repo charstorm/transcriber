@@ -1,0 +1,38 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2b2030"/>
+      <stop offset="0.55" stop-color="#1b1620"/>
+      <stop offset="1" stop-color="#120f16"/>
+    </linearGradient>
+    <linearGradient id="bars" x1="0" y1="180" x2="0" y2="844" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff8a8e"/>
+      <stop offset="0.5" stop-color="#ff5a5f"/>
+      <stop offset="1" stop-color="#e23d52"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.3" cy="0.22" r="0.9">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="14" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- squircle background -->
+  <rect x="0" y="0" width="1024" height="1024" rx="232" ry="232" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1024" height="1024" rx="232" ry="232" fill="url(#sheen)"/>
+  <rect x="4" y="4" width="1016" height="1016" rx="230" ry="230" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="2"/>
+
+  <!-- waveform: 7 pill bars, symmetric, centered on cy=512 -->
+  <g fill="url(#bars)" filter="url(#glow)">
+    <rect x="128" y="392" width="72" height="240" rx="36"/>
+    <rect x="244" y="322" width="72" height="380" rx="36"/>
+    <rect x="360" y="212" width="72" height="600" rx="36"/>
+    <rect x="476" y="132" width="72" height="760" rx="36"/>
+    <rect x="592" y="212" width="72" height="600" rx="36"/>
+    <rect x="708" y="322" width="72" height="380" rx="36"/>
+    <rect x="824" y="392" width="72" height="240" rx="36"/>
+  </g>
+</svg>
