@@ -66,11 +66,27 @@ fn load_config() -> Result<serde_json::Value, String> {
         Some(p) => p,
         None => return Ok(serde_json::Value::Null),
     };
-    let text = match std::fs::read_to_string(&path) {
-        Ok(t) => t,
-        Err(_) => return Ok(serde_json::Value::Null),
-    };
-    serde_yaml::from_str(&text).map_err(|e| e.to_string())
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    // A missing file is not an error: start from an empty object so the
+    // TRANSCRIBER_API_KEY env overlay below still applies.
+    let mut value: serde_json::Value =
+        serde_yaml::from_str(&text).unwrap_or(serde_json::Value::Null);
+
+    // The deployed app (start_apps.sh → set_env.sh) supplies the key via the
+    // TRANSCRIBER_API_KEY env var, kept separate from reshka's OPENROUTER_API_KEY
+    // so the two apps use independent OpenRouter accounts. The env var takes
+    // precedence over any api_key in config.yaml.
+    if let Ok(key) = std::env::var("TRANSCRIBER_API_KEY") {
+        if !key.trim().is_empty() {
+            if !value.is_object() {
+                value = serde_json::Value::Object(serde_json::Map::new());
+            }
+            if let Some(obj) = value.as_object_mut() {
+                obj.insert("api_key".into(), serde_json::Value::String(key));
+            }
+        }
+    }
+    Ok(value)
 }
 
 // ── auto-paste ───────────────────────────────────────────────────────────────
