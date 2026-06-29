@@ -10,7 +10,7 @@ model: mistralai/voxtral-small-24b-2507
 
 # Retries on a failed transcription request. Total attempts = max_retries + 1,
 # with exponential backoff (1s, 2s, 4s, 8s …) between attempts.
-max_retries: 3
+max_retries: 1
 
 # Auto-paste: on close (Esc / close button), paste the transcript into whatever
 # app was focused before. Linux/Wayland only — needs `wl-copy` (wl-clipboard),
@@ -30,12 +30,19 @@ vad:
   # soft/short phrases ("hello there") are picked up more readily.
   positive_speech_threshold: 0.5
   # Confidence (0–1) below which speech is considered ENDED.
-  negative_speech_threshold: 0.35
+  negative_speech_threshold: 0.5
   # Silence required before an utterance is finished. Higher = mid-sentence
   # pauses don't cut you off (but utterances finalize a bit later).
-  silence_ms: 800
+  silence_ms: 700
   # Minimum speech length to count as a valid utterance. Lower lets short
   # phrases through; too low also lets coughs/clicks through.
-  min_speech_ms: 250
+  min_speech_ms: 300
   # Pre-roll prepended before detected speech so the first word isn't clipped.
-  pre_speech_pad_ms: 160
+  pre_speech_pad_ms: 300
+
+# Extra transcription rules appended to the system prompt as bullet points (same
+# mechanism as reshka). Omit the key entirely to send the base prompt only.
+# config_instructions:
+#   - Properly capitalize text. Add comma (,), question mark (?), etc where required.
+#   - Transcribe "slash" as / in paths and identifiers (e.g. "data slash docs" → "data/docs").
+#   - Prefer lowercase for anything that sounds like a technical identifier, path, or filename.

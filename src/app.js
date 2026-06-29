@@ -46,8 +46,11 @@ const DEFAULTS = {
   // delay before the paste keystroke fires, so focus returns to the prior app.
   pasteDelayMs: 800,
   // retries on a failed transcription request (total attempts = maxRetries + 1),
-  // with exponential backoff (1s, 2s, 4s, 8s …) between them.
-  maxRetries: 3,
+  // with exponential backoff (1s, 2s, 4s, 8s …) between them. Matched to reshka,
+  // which makes 2 attempts total (reshka_tui.py:256), i.e. 1 retry.
+  maxRetries: 1,
+  // config_instructions appended to the system prompt (see buildSystemPrompt).
+  configInstructions: [],
 };
 
 const SYSTEM_PROMPT =
@@ -60,23 +63,38 @@ const SYSTEM_PROMPT =
 
 const USER_PROMPT = "Transcribe the audio verbatim.";
 
+// config_instructions from ~/.config/transcriber/config.yaml are appended to the
+// system prompt, matching reshka's mechanism (reshka_tui.py:608-615): each entry
+// becomes a "- {instruction}" bullet under a "Config Instructions:" heading. The
+// effective prompt is rebuilt whenever the file config is (re)loaded.
+let systemPrompt = SYSTEM_PROMPT;
+function buildSystemPrompt(instructions) {
+  const items = (instructions || []).map((i) => String(i).trim()).filter(Boolean);
+  systemPrompt = items.length
+    ? SYSTEM_PROMPT + "\n\nConfig Instructions:\n" + items.map((i) => `- ${i}`).join("\n")
+    : SYSTEM_PROMPT;
+}
+
 // Silero VAD tuning. v5 frame = 512 samples @16kHz ≈ 32ms.
 const FRAME_MS = 32;
 
 // Defaults are expressed in milliseconds (converted to frame counts when the
 // VAD is created) and are overridable via ~/.config/transcriber/config.yaml.
+// Matched to reshka's hardcoded VAD constants (reshka_tui.py:122-125) so the two
+// apps segment audio identically. reshka uses a single 0.5 threshold, so the
+// negative (end-of-speech) threshold is also 0.5 here rather than a lower value.
 const VAD_DEFAULTS = {
   positiveSpeechThreshold: 0.5,
-  negativeSpeechThreshold: 0.35,
+  negativeSpeechThreshold: 0.5,
   // silence required before an utterance is considered finished. Short pauses
   // between clauses no longer split one utterance into several.
-  silenceMs: 500,
+  silenceMs: 700,
   // minimum speech length to count as a valid utterance. Lower = short phrases
   // like "hello there" get through; too low also lets coughs/clicks through.
-  minSpeechMs: 250,
+  minSpeechMs: 300,
   // pre-roll prepended before detected speech start so the first word isn't
   // clipped. (vad-web default is 1 frame ≈ 32ms.)
-  preSpeechPadMs: 160,
+  preSpeechPadMs: 300,
 };
 let vadParams = { ...VAD_DEFAULTS };
 
@@ -192,6 +210,13 @@ async function loadFileConfig() {
   if (str(file.paste_key)) config.pasteKey = str(file.paste_key);
   if (num(file.paste_delay_ms) !== undefined) config.pasteDelayMs = Math.max(0, Math.round(num(file.paste_delay_ms)));
 
+  if (Array.isArray(file.config_instructions)) {
+    config.configInstructions = file.config_instructions
+      .map((i) => String(i).trim())
+      .filter(Boolean);
+    buildSystemPrompt(config.configInstructions);
+  }
+
   const v = file.vad;
   if (v && typeof v === "object") {
     const map = {
@@ -209,7 +234,7 @@ async function loadFileConfig() {
   log("config.yaml applied:", JSON.stringify({
     model: config.model, maxRetries: config.maxRetries,
     autoPaste: config.autoPaste, pasteKey: config.pasteKey, pasteDelayMs: config.pasteDelayMs,
-    vad: vadParams,
+    vad: vadParams, configInstructions: config.configInstructions.length,
   }));
 }
 
@@ -367,7 +392,7 @@ async function postTranscription(base64) {
       model: config.model,
       temperature: 0.2,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         {
           role: "user",
           content: [
