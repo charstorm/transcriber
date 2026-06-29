@@ -8,15 +8,18 @@ OLD reshka (reference "good"): /home/vinay/universe/work/reshka/pyreshka/reshka_
 
 ## Pipeline both: mic 16kHz mono -> Silero VAD segments utterance -> WAV 16bit PCM -> base64 -> POST OpenAI-compat chat/completions with input_audio -> text. Both order results by capture-seq (parallel transcribe, flush in spoken order). Both model = mistralai/voxtral-small-24b-2507 (SAME in prod). Endpoint openrouter /api/v1.
 
-## NEW key files/lines (src/app.js ~790 lines, monolithic)
-- VAD via @ricky0123/vad-web@0.0.24, Silero v5 ONNX/WASM. MicVAD.new app.js:~480. Warm-swap mic (keep model warm, only stop tracks) acquireMic/releaseMic ~471-528. FRAME_MS=32 (512smp@16k).
-- VAD_DEFAULTS app.js:~68. buildVadConfig ms->frames ~85.
-- SYSTEM_PROMPT app.js:~53 (plain verbatim, NOT json). buildSystemPrompt ~62 appends config_instructions as "- {i}" under "Config Instructions:" heading. systemPrompt var used in postTranscription messages.
-- postTranscription ~360: temperature 0.2, system+user(input_audio wav + USER_PROMPT). Retry loop ~414 exp backoff 1/2/4/8s.
-- loadFileConfig ~174 merges ~/.config/transcriber/config.yaml (parsed by Rust load_config) over DEFAULTS. Reads config_instructions array ~196.
-- MIC_CONSTRAINTS ~464: echoCancellation+autoGainControl+noiseSuppression ALL TRUE (browser preprocessing — suspect for mismatch). Float32 audio.
-- Rust src-tauri/src/lib.rs: load_config (yaml->json) ~63; log_init/log_append; dump_wav; paste_transcript (wl-copy+ydotool); single-instance resident + wake event.
-- Logs: ~/.cache/transcriber/transcriber.log (truncated each launch). Already logs speech-end ms/samples/seq, bytes sent, full response per seq. DUMP_AUDIO=true app.js:11 dumps each utterance WAV to ~/.cache/transcriber/dumps/ (throwaway, remove before ship).
+## NEW key files/lines (src/app.js ~820 lines, monolithic; line nums approx)
+- VAD via @ricky0123/vad-web@0.0.24, Silero v5 ONNX/WASM. MicVAD.new (model:"v5") acquireMic. Warm-swap mic (keep model warm, only stop tracks). FRAME_MS=32 (512smp@16k). v5 frame defaults = frameSamples 512 (we rely on lib v5 default, don't pass frameSamples).
+- VAD_DEFAULTS app.js:~95. buildVadConfig ms->frames. CURRENT: pos/neg threshold 0.5/0.5, silenceMs 980, minSpeechMs 300, preSpeechPadMs 700 (pad+silence raised over reshka to offset v5's later onset / eager clause cutting; see session log below).
+- getUserMedia MONKEY-PATCH near top (forceRawAudio, after log fn): strips EC/AGC/NS off EVERY capture incl vad-web's own hardcoded-true first-init call (lib spreads caller constraints BEFORE its hardcoded true, so options API can't override). => raw audio like reshka.
+- SYSTEM_PROMPT app.js:~63 = char-for-char reshka JSON-envelope prompt. buildSystemPrompt appends UNTRIMMED config_instructions as "- {i}" under "Config Instructions:". parseTranscription (port of reshka _parse_json): strip fence, JSON.parse, return audio_transcription field.
+- postTranscription ~400: temperature 0.01, NO user field. messages = system + user 3-part [text "[Audio]", input_audio wav, text "[/Audio] Response(json):"]. Retry loop exp backoff 1/2/4/8s, maxRetries 1.
+- loadFileConfig merges ~/.config/transcriber/config.yaml (parsed by Rust load_config) over DEFAULTS. file.api_key -> config.apiKey. vad block in config OVERRIDES code defaults (so VAD changes must hit BOTH code + config.yaml).
+- MIC_CONSTRAINTS: echoCancellation+autoGainControl+noiseSuppression ALL FALSE (raw audio; also enforced by the getUserMedia patch). Float32 audio.
+- transcript font #transcript styles.css:~217 = 18px (was 14px).
+- Rust src-tauri/src/lib.rs: load_config (yaml->json) ~63, NOW overlays TRANSCRIBER_API_KEY env as api_key (env wins over file, applied even if file missing); log_init/log_append; dump_wav; paste_transcript (wl-copy+ydotool); single-instance resident + wake event.
+- Logs: ~/.cache/transcriber/transcriber.log (truncated each launch). Logs speech-end ms/samples/seq, bytes sent, full response per seq, "[init] getUserMedia patched" line. DUMP_AUDIO=true app.js:~11 dumps each utterance WAV to ~/.cache/transcriber/dumps/ (throwaway, remove before ship).
+- API KEY: app gets key from TRANSCRIBER_API_KEY env (NOT OPENROUTER_API_KEY — that's reshka's). start_apps.sh sources ~/scripts/set_env.sh (SCRIPT_DIR-relative, set -a) before launching transcriber. set_env.sh holds TRANSCRIBER_API_KEY=... 402 Payment Required = that key's account is out of credits.
 
 ## OLD reshka key facts (reshka_tui.py)
 - sounddevice InputStream raw int16, blocksize=512 (~632). NO browser preprocessing (raw mic).
@@ -31,26 +34,23 @@ OLD reshka (reference "good"): /home/vinay/universe/work/reshka/pyreshka/reshka_
 ## Prod configs (live, outside repo)
 NEW: ~/.config/transcriber/config.yaml. OLD: ~/.config/reshka/config.yaml (dir is "reshka" NOT "pyreshka"). repo template = config.example.yaml.
 
-## Work done (2026-06-29, commit 3553241 + this commit)
-MATCHED new->old to remove divergence:
-1. config_instructions: added support in app.js (buildSystemPrompt) + copied reshka's full 10-line block into ~/.config/transcriber/config.yaml. Backup at ~/scripts/transcriber-config.yaml.
-2. VAD/retry matched: silence_ms 800->700, min_speech 250->300, pre_speech_pad 160->300, negative_threshold 0.35->0.5 (reshka single-threshold), max_retries 3->1. Changed in code DEFAULTS, config.example.yaml, AND prod config.yaml.
-Build: `npm run tauri build` -> src-tauri/target/release/transcriber. DEPLOY: copy to ~/scripts/transcriber (what start_apps.sh launches). `npm run build` = frontend only.
-Launch: bash ~/scripts/start_apps.sh {reshka|transcriber}.
+## Build / deploy / launch
+Build: `npm run tauri build` -> src-tauri/target/release/transcriber. DEPLOY: copy to ~/scripts/transcriber (what start_apps.sh launches). If "Text file busy" (app running): cp to transcriber.new then `mv -f` over (rename swaps dir entry, running inode untouched). `npm run build` = frontend only. Launch: bash ~/scripts/start_apps.sh {reshka|transcriber}.
 
-## Prompt/payload parity (DONE this session)
-Made the LLM payload byte-identical to reshka for PROMPT+DATA (audio deferred):
-- SYSTEM_PROMPT app.js:~56 now char-for-char copy of reshka _DEFAULT_SYSTEM_PROMPT (JSON envelope: {"response":fixed refusal,"audio_transcription":...}).
-- User content app.js:~398 now reshka's 3-part order: text "[Audio]" / input_audio / text "[/Audio] Response(json):". Dropped old USER_PROMPT.
-- buildSystemPrompt: bullets UNTRIMMED config_instructions (filter on trimmed-truthy) to match reshka:609-614 exactly.
-- parseTranscription app.js (new fn, port of reshka _parse_json :747-755): strip fence, JSON.parse, return audio_transcription ("" if empty/missing/unparseable). postTranscription now calls it instead of returning raw content.
-- INTENTIONAL divergences (user override, NOT matched): temperature=0.01 (reshka sends none); `user` field omitted (reshka sends "transcriber_tui").
-- context_words: still omitted (disabled in prod both apps).
+## Work done 2026-06-29 session 1 (commit 3553241): MATCHED new->old: config_instructions support+block; VAD/retry silence 800->700, min_speech 250->300, pre_speech_pad 160->300, neg_threshold 0.35->0.5, max_retries 3->1. (pad+silence later re-tuned in session 2.)
 
-## Remaining divergences (NOT yet fixed; suspects for residual mismatch)
-1. Browser audio preprocessing (AGC/NS/EC=true in MIC_CONSTRAINTS) vs reshka raw int16. Same model, different waveform. <- NEXT TARGET (audio).
-2. VAD engine: vad-web Silero v5 vs native pysilero (boundaries differ even at same threshold).
-3. int16 conversion rounding (app.js s*0x8000/0x7fff vs numpy cast) — only relevant after 1&2.
+## Work done 2026-06-29 session 2 (commits ec5313e, f2df92e, 211c8c9, a80b7ba, + prompt-parity 7c142d7)
+A/B tested old-vs-new live (paste both, compare). Verdict: new now daily-usable, JSON envelope holds (no assistant-style leakage), first-word clipping greatly reduced.
+1. Prompt/payload byte-identical to reshka (see NEW section). temp 0.01, no user field = intentional overrides.
+2. API key via TRANSCRIBER_API_KEY env (was failing 402 — new app used empty in-app key).
+3. Raw audio: getUserMedia patch + MIC_CONSTRAINTS false. Fixed aggressive splitting from NS gating inter-word pauses to silence.
+4. VAD: preSpeechPadMs 300->700 (recover clipped first word; v5 onset later than pysilero), silenceMs 700->980 (+40%, fewer mid-sentence cuts). Cost: ~0.3s later finalize.
+5. Transcript font 14->18px.
+
+## Remaining / next session
+1. Cutting STILL a bit aggressive occasionally (user-observed) even after VAD tune — vad-web Silero v5 vs native pysilero boundary diff is the root; may need further pad/silence tuning or a custom end-of-speech heuristic.
+2. int16 conversion rounding (app.js s*0x8000/0x7fff vs numpy cast) — minor, likely negligible.
+3. UX deferred (user explicitly "another time"): (a) "dock falling from top" open animation instead of normal app window; (b) color scheme improvement (current dark grayscale ok but not great).
 
 ## Gotcha
 @ricky0123/vad-web bundles OWN nested onnxruntime-web@1.14.0. WASM in public/vad/ MUST come from that nested copy (scripts/copy-vad-assets.mjs handles via prebuild/predev). Version mismatch breaks inference.
