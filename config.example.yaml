@@ -33,12 +33,13 @@ vad:
   negative_speech_threshold: 0.5
   # Silence required before an utterance is finished. Higher = mid-sentence
   # pauses don't cut you off (but utterances finalize a bit later).
-  silence_ms: 700
+  silence_ms: 980
   # Minimum speech length to count as a valid utterance. Lower lets short
   # phrases through; too low also lets coughs/clicks through.
   min_speech_ms: 300
   # Pre-roll prepended before detected speech so the first word isn't clipped.
-  pre_speech_pad_ms: 300
+  # Deeper than reshka's 300ms to offset Silero v5's later onset detection.
+  pre_speech_pad_ms: 700
 
 # Extra transcription rules appended to the system prompt as bullet points (same
 # mechanism as reshka). Omit the key entirely to send the base prompt only.

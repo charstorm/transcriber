@@ -126,14 +126,19 @@ const VAD_DEFAULTS = {
   positiveSpeechThreshold: 0.5,
   negativeSpeechThreshold: 0.5,
   // silence required before an utterance is considered finished. Short pauses
-  // between clauses no longer split one utterance into several.
-  silenceMs: 700,
+  // between clauses no longer split one utterance into several. Bumped ~40% over
+  // reshka's 700ms: Silero v5 (vad-web) cuts more eagerly at clause boundaries
+  // than reshka's native pysilero, so a longer window rides through mid-sentence
+  // pauses (cost: utterances finalize a beat later).
+  silenceMs: 980,
   // minimum speech length to count as a valid utterance. Lower = short phrases
   // like "hello there" get through; too low also lets coughs/clicks through.
   minSpeechMs: 300,
   // pre-roll prepended before detected speech start so the first word isn't
-  // clipped. (vad-web default is 1 frame ≈ 32ms.)
-  preSpeechPadMs: 300,
+  // clipped. (vad-web default is 1 frame ≈ 32ms.) Raised over reshka's 300ms
+  // because Silero v5 crosses the speech threshold later at a soft word onset,
+  // so a deeper pad is needed to recover the clipped first word.
+  preSpeechPadMs: 700,
 };
 let vadParams = { ...VAD_DEFAULTS };
 
