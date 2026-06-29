@@ -38,10 +38,19 @@ MATCHED new->old to remove divergence:
 Build: `npm run tauri build` -> src-tauri/target/release/transcriber. DEPLOY: copy to ~/scripts/transcriber (what start_apps.sh launches). `npm run build` = frontend only.
 Launch: bash ~/scripts/start_apps.sh {reshka|transcriber}.
 
+## Prompt/payload parity (DONE this session)
+Made the LLM payload byte-identical to reshka for PROMPT+DATA (audio deferred):
+- SYSTEM_PROMPT app.js:~56 now char-for-char copy of reshka _DEFAULT_SYSTEM_PROMPT (JSON envelope: {"response":fixed refusal,"audio_transcription":...}).
+- User content app.js:~398 now reshka's 3-part order: text "[Audio]" / input_audio / text "[/Audio] Response(json):". Dropped old USER_PROMPT.
+- buildSystemPrompt: bullets UNTRIMMED config_instructions (filter on trimmed-truthy) to match reshka:609-614 exactly.
+- parseTranscription app.js (new fn, port of reshka _parse_json :747-755): strip fence, JSON.parse, return audio_transcription ("" if empty/missing/unparseable). postTranscription now calls it instead of returning raw content.
+- INTENTIONAL divergences (user override, NOT matched): temperature=0.01 (reshka sends none); `user` field omitted (reshka sends "transcriber_tui").
+- context_words: still omitted (disabled in prod both apps).
+
 ## Remaining divergences (NOT yet fixed; suspects for residual mismatch)
-1. Browser audio preprocessing (AGC/NS/EC=true in MIC_CONSTRAINTS) vs reshka raw int16. Same model, different waveform.
+1. Browser audio preprocessing (AGC/NS/EC=true in MIC_CONSTRAINTS) vs reshka raw int16. Same model, different waveform. <- NEXT TARGET (audio).
 2. VAD engine: vad-web Silero v5 vs native pysilero (boundaries differ even at same threshold).
-3. BASE system prompt format: new=plain verbatim, old=JSON audio_transcription. <- NEXT SESSION TARGET: fix the system prompt.
+3. int16 conversion rounding (app.js s*0x8000/0x7fff vs numpy cast) — only relevant after 1&2.
 
 ## Gotcha
 @ricky0123/vad-web bundles OWN nested onnxruntime-web@1.14.0. WASM in public/vad/ MUST come from that nested copy (scripts/copy-vad-assets.mjs handles via prebuild/predev). Version mismatch breaks inference.
