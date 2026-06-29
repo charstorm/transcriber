@@ -24,6 +24,33 @@ const log = (...args) => {
   invoke("log_append", { line }).catch(() => {}); // mirror to disk, best-effort
 };
 
+// ── force raw audio (monkey-patch getUserMedia) ───────────────────────────────
+// reshka feeds the VAD RAW int16 from the mic; we must too. Browser audio
+// preprocessing (echoCancellation/autoGainControl/noiseSuppression) gates the
+// low-energy gaps between words to near-silence, which makes Silero's probability
+// crash during natural pauses and the VAD cut utterances aggressively at awkward
+// points. vad-web hardcodes all three to `true` in its own first-init
+// getUserMedia call AND spreads caller constraints *before* those hardcoded
+// values, so they can't be overridden through the options API. So we patch
+// getUserMedia once, at module load (before any mic is opened), to strip that
+// preprocessing off EVERY audio capture — the library's hidden call included.
+(function forceRawAudio() {
+  const md = navigator.mediaDevices;
+  if (!md || typeof md.getUserMedia !== "function") return;
+  const orig = md.getUserMedia.bind(md);
+  md.getUserMedia = (constraints) => {
+    if (constraints && constraints.audio) {
+      const a = constraints.audio === true ? {} : { ...constraints.audio };
+      a.echoCancellation = false;
+      a.autoGainControl = false;
+      a.noiseSuppression = false;
+      constraints = { ...constraints, audio: a };
+    }
+    return orig(constraints);
+  };
+  log("[init] getUserMedia patched: raw audio (EC/AGC/NS off)");
+})();
+
 // ── config ────────────────────────────────────────────────────────────────
 const CONFIG_KEY = "transcriber:config";
 const TRANSCRIPT_KEY = "transcriber:transcript";
@@ -518,11 +545,15 @@ async function transcribeAudio(float32, seq) {
 // We reach into a few public-but-undocumented MicVAD fields (.audioContext,
 // .stream, .sourceNode, .audioNodeVAD.receive). They're pinned by our locked
 // vad-web version; if a future bump breaks them, fall back to destroy/recreate.
+// Raw audio to match reshka — see the forceRawAudio() patch near the top. These
+// are also enforced by that patch (it strips preprocessing from every
+// getUserMedia call), but we set them false here too so the warm-path intent is
+// explicit and doesn't rely solely on the patch.
 const MIC_CONSTRAINTS = {
   channelCount: 1,
-  echoCancellation: true,
-  autoGainControl: true,
-  noiseSuppression: true,
+  echoCancellation: false,
+  autoGainControl: false,
+  noiseSuppression: false,
 };
 
 async function acquireMic() {
