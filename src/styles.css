@@ -29,10 +29,12 @@
 
   /* ── derived tones (cascade from the 5 base tokens) ───────── */
   --panel-b: color-mix(in srgb, var(--panel) 55%, #000);
-  --body: color-mix(in srgb, var(--line) 82%, #eef6ff);
+  --body: color-mix(in srgb, var(--line) 60%, #eef6ff);
   --header: color-mix(in srgb, #ffffff 72%, var(--accent));
-  --muted: color-mix(in srgb, var(--line) 50%, var(--bg));
-  --muted2: color-mix(in srgb, var(--line) 32%, var(--bg));
+  /* muted tones are derived from --body (not --bg) so dim text stays legible
+     on the dark navy instead of sinking into it. */
+  --muted: color-mix(in srgb, var(--body) 72%, var(--bg));
+  --muted2: color-mix(in srgb, var(--body) 50%, var(--bg));
 
   --glow: color-mix(in srgb, var(--accent) 22%, transparent);
   --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
@@ -275,7 +277,7 @@ body {
   resize: none;
   background: transparent;
   border: none;
-  color: color-mix(in srgb, var(--body) 78%, var(--bg));
+  color: var(--body);
   font-size: 16px;
   line-height: 1.7;
   font-family: "JetBrains Mono", ui-monospace, monospace;
