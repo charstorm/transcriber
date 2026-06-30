@@ -216,6 +216,16 @@ fn paste_transcript(
     paste_key: String,
     delay_ms: Option<u64>,
 ) -> Result<(), String> {
+    // Defensive guard: never fire the paste shortcut for empty content. The
+    // frontend already trims + skips empty, but enforce it here too so the
+    // ydotool keystroke can never land on a stale clipboard. Use the trimmed
+    // text for the clipboard so trailing whitespace is stripped at the source.
+    let text = text.trim();
+    if text.is_empty() {
+        append_log("[paste] skipped: empty transcript (no shortcut fired)");
+        return Ok(());
+    }
+
     #[cfg(target_os = "linux")]
     {
         use std::process::{Command, Stdio};
