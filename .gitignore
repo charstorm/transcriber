@@ -15,6 +15,9 @@ dist-ssr
 # Generated VAD/onnx runtime assets (copied from node_modules by scripts/copy-vad-assets.mjs)
 public/vad/
 
+# Generated fonts (copied from @fontsource node_modules by scripts/copy-fonts.mjs)
+public/fonts/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

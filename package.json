@@ -4,17 +4,19 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "predev": "node scripts/copy-vad-assets.mjs",
+    "predev": "node scripts/copy-vad-assets.mjs && node scripts/copy-fonts.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/copy-vad-assets.mjs",
+    "prebuild": "node scripts/copy-vad-assets.mjs && node scripts/copy-fonts.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri"
   },
   "dependencies": {
+    "@fontsource/exo": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@ricky0123/vad-web": "^0.0.24",
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-clipboard-manager": "^2",
-    "@ricky0123/vad-web": "^0.0.24"
+    "@tauri-apps/plugin-clipboard-manager": "^2"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

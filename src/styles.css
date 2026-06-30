@@ -1,24 +1,67 @@
+/* ── local fonts (no runtime network fetch) ───────────────────
+   woff2 files are generated into public/fonts/ by scripts/copy-fonts.mjs
+   (runs on predev/prebuild). Exo = UI, JetBrains Mono = transcript/mono. */
+@font-face { font-family:"Exo"; font-style:normal; font-weight:300; font-display:swap;
+  src:url("/fonts/exo-latin-300-normal.woff2") format("woff2"); }
+@font-face { font-family:"Exo"; font-style:normal; font-weight:400; font-display:swap;
+  src:url("/fonts/exo-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family:"Exo"; font-style:normal; font-weight:500; font-display:swap;
+  src:url("/fonts/exo-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family:"Exo"; font-style:normal; font-weight:600; font-display:swap;
+  src:url("/fonts/exo-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family:"Exo"; font-style:normal; font-weight:700; font-display:swap;
+  src:url("/fonts/exo-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family:"JetBrains Mono"; font-style:normal; font-weight:300; font-display:swap;
+  src:url("/fonts/jetbrains-mono-latin-300-normal.woff2") format("woff2"); }
+@font-face { font-family:"JetBrains Mono"; font-style:normal; font-weight:400; font-display:swap;
+  src:url("/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+
 :root {
-  /* Neutral grayscale palette — black & gray, no color tints. Red is kept only
-     for functional states (errors, recording). Solid/opaque (no transparency). */
-  --glass-1: #1c1c1c;
-  --glass-2: #121212;
-  --transcript-bg: #0d0d0d;
-  --inset: rgba(0, 0, 0, 0.3);
-  --border: rgba(255, 255, 255, 0.1);
-  --border-soft: rgba(255, 255, 255, 0.06);
-  --hairline: rgba(255, 255, 255, 0.07);
-  --text: #e6e6e6;
-  --text-bright: #f5f5f5;
-  --text-dim: #9a9a9a;
-  /* "accent" is just a bright neutral now — used for active/listening/viz */
-  --accent: #cfcfcf;
-  --accent-2: #9a9a9a;
-  --danger: #ff5a5a;
-  --green: #cfcfcf;
-  --yellow: #bdbdbd;
+  /* ── config-driven base tokens ──────────────────────────────
+     These 5 are overridden at runtime from ~/.config/transcriber/config.yaml
+     (theme: block) by applyTheme() in app.js via setProperty. Everything else
+     below derives from them, so changing one base token cascades app-wide. */
+  --bg: #070a11;
+  --panel: #101c2b;
+  --line: #8fb2c9;
+  --accent: #46e6f6;
+  --alert: #ff5a6a;
+
+  /* ── derived tones (cascade from the 5 base tokens) ───────── */
+  --panel-b: color-mix(in srgb, var(--panel) 55%, #000);
+  --body: color-mix(in srgb, var(--line) 82%, #eef6ff);
+  --header: color-mix(in srgb, #ffffff 72%, var(--accent));
+  --muted: color-mix(in srgb, var(--line) 50%, var(--bg));
+  --muted2: color-mix(in srgb, var(--line) 32%, var(--bg));
+
+  --glow: color-mix(in srgb, var(--accent) 22%, transparent);
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 50%, transparent);
+  --alert-soft: color-mix(in srgb, var(--alert) 13%, transparent);
+  --alert-line: color-mix(in srgb, var(--alert) 52%, transparent);
+  --alert-glow: color-mix(in srgb, var(--alert) 24%, transparent);
+
+  /* ── legacy aliases (existing rules below reference these) ── */
+  --glass-1: var(--panel);
+  --glass-2: var(--bg);
+  --inset: rgba(0, 0, 0, 0.35);
+  --border: color-mix(in srgb, var(--line) 22%, transparent);
+  --border-soft: color-mix(in srgb, var(--line) 12%, transparent);
+  --hairline: color-mix(in srgb, var(--line) 14%, transparent);
+  --text: var(--body);
+  --text-bright: var(--header);
+  --text-dim: var(--muted);
+  --accent-2: var(--accent-line);
+  --danger: var(--alert);
+  --green: var(--accent);
+  --yellow: color-mix(in srgb, var(--accent) 55%, #ffd27a);
+
   --radius: 12px;
-  font-family: "Ubuntu Sans", "Ubuntu", system-ui, sans-serif;
+  --cut: 8px; /* corner-cut size for HUD tiles */
+
+  font-family: "Exo", "Ubuntu Sans", system-ui, sans-serif;
+  font-weight: 300;
+  color: var(--text);
   color-scheme: dark;
 }
 
@@ -34,12 +77,14 @@ body {
 
 /* opaque window — no transparency/blur (removed for load speed). */
 html {
-  background: var(--glass-2);
+  background: var(--bg);
 }
 
-/* body IS the window surface (solid) */
+/* body IS the window surface (solid). navy gradient + faint accent glow. */
 body {
-  background: linear-gradient(160deg, var(--glass-1), var(--glass-2));
+  background:
+    radial-gradient(120% 80% at 12% 0%, var(--accent-soft), transparent 55%),
+    linear-gradient(158deg, var(--panel) 0%, var(--bg) 62%, var(--panel-b) 100%);
   border: 1px solid var(--border);
   /* square corners: GNOME/Wayland draws a rectangular window shadow that can't
      be disabled on Linux, so rounded corners leave a visible square overlay.
@@ -52,6 +97,7 @@ body {
   overflow: hidden;
   font-size: 13px;
   user-select: none;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* ── titlebar ─────────────────────────────────────────────── */
@@ -61,7 +107,7 @@ body {
   justify-content: space-between;
   height: 36px;
   padding: 0 8px 0 13px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, transparent), transparent);
   border-bottom: 1px solid var(--hairline);
   flex-shrink: 0;
 }
@@ -74,13 +120,16 @@ body {
 
 .brand-name {
   font-weight: 600;
-  letter-spacing: 0.4px;
-  color: var(--text);
+  font-size: 12px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--header);
+  text-shadow: 0 0 12px var(--glow);
 }
 
 .titlebar-actions {
   display: flex;
-  gap: 3px;
+  gap: 4px;
 }
 
 .icon-btn {
@@ -88,22 +137,24 @@ body {
   place-items: center;
   width: 28px;
   height: 28px;
-  border: none;
-  border-radius: 7px;
-  background: transparent;
+  border: 1px solid var(--border-soft);
+  background: color-mix(in srgb, var(--panel) 45%, transparent);
   color: var(--text-dim);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, transform 0.06s ease,
+  clip-path: polygon(0 0, calc(100% - 5px) 0, 100% 5px, 100% 100%, 5px 100%, 0 calc(100% - 5px));
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.06s ease,
     filter 0.06s ease;
 }
 
 .icon-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel-b));
+  border-color: var(--accent-line);
+  color: var(--header);
 }
 
 .icon-btn.close:hover {
-  background: var(--danger);
+  background: color-mix(in srgb, var(--alert) 22%, var(--panel-b));
+  border-color: var(--alert-line);
   color: #fff;
 }
 
@@ -112,7 +163,7 @@ body {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #6b7290;
+  background: var(--muted2);
   flex-shrink: 0;
   transition: background 0.25s, box-shadow 0.25s;
 }
@@ -122,8 +173,8 @@ body {
   animation: pulse 1.6s ease-in-out infinite;
 }
 .dot.speaking {
-  background: var(--green);
-  box-shadow: 0 0 12px var(--green);
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
 }
 .dot.processing {
   background: var(--yellow);
@@ -160,8 +211,11 @@ body {
 
 .view h2 {
   margin: 2px 0 4px;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--header);
 }
 
 /* API-key-missing banner — the app can't be used without a key, so make it
@@ -187,8 +241,8 @@ body {
   font-size: 12px;
   line-height: 1.4;
   color: var(--danger);
-  background: rgba(255, 93, 115, 0.1);
-  border: 1px solid rgba(255, 93, 115, 0.4);
+  background: var(--alert-soft);
+  border: 1px solid var(--alert-line);
   border-radius: var(--radius);
 }
 .paste-warn.hidden {
@@ -200,10 +254,18 @@ body {
   flex: 1;
   min-height: 0;
   display: flex;
-  border-radius: var(--radius);
-  padding: 12px;
-  background: var(--transcript-bg);
-  border: 1px solid var(--border-soft);
+  padding: 14px 16px;
+  /* corner-cut HUD tile; border drawn as inset shadow so it survives the clip */
+  clip-path: polygon(
+    var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)),
+    calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut)
+  );
+  background:
+    radial-gradient(130% 90% at 12% 0%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 55%),
+    linear-gradient(152deg, color-mix(in srgb, var(--panel) 70%, #000) 0%, var(--bg) 52%, var(--panel-b) 100%);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--line) 12%, transparent),
+    inset 0 4px 26px rgba(0, 0, 0, 0.55);
 }
 
 #transcript {
@@ -213,16 +275,17 @@ body {
   resize: none;
   background: transparent;
   border: none;
-  color: var(--text-bright);
-  font-size: 18px;
-  line-height: 1.6;
-  font-family: "Ubuntu Sans", "Ubuntu", system-ui, sans-serif;
+  color: color-mix(in srgb, var(--body) 78%, var(--bg));
+  font-size: 16px;
+  line-height: 1.7;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 300;
   -webkit-font-smoothing: antialiased;
   user-select: text;
   outline: none;
 }
 #transcript::placeholder {
-  color: var(--text-dim);
+  color: var(--muted);
 }
 
 .transcript-toolbar {
@@ -237,7 +300,9 @@ body {
 
 /* live status text next to the visualizer ("Listening…", "Transcribing…") */
 .status-text {
-  font-size: 12px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--text-dim);
   white-space: nowrap;
   transition: color 0.2s;
@@ -245,6 +310,7 @@ body {
 .status-text.listening,
 .status-text.speaking {
   color: var(--accent);
+  text-shadow: 0 0 9px var(--glow);
 }
 .status-text.processing {
   color: var(--yellow);
@@ -259,21 +325,23 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11.5px;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: var(--text-dim);
-  padding: 4px 9px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-soft);
+  padding: 4px 10px;
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+  background: color-mix(in srgb, var(--panel) 45%, transparent);
+  box-shadow: inset 0 0 0 1px var(--border-soft);
   white-space: nowrap;
-  transition: color 0.2s, border-color 0.2s;
+  transition: color 0.2s;
 }
 .stat .num {
   font-variant-numeric: tabular-nums;
   min-width: 1.1em;
   text-align: right;
   font-weight: 600;
-  color: var(--text);
+  color: var(--body);
 }
 /* the spinner dot only belongs to the "active" slot; idle = dim and still */
 .stat .spin {
@@ -285,7 +353,7 @@ body {
 }
 .stat.busy {
   color: var(--yellow);
-  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 .stat.busy .spin {
   opacity: 1;
@@ -307,7 +375,8 @@ body {
   height: 20%;
   border-radius: 2px;
   background: currentColor;
-  opacity: 0.85;
+  opacity: 0.9;
+  box-shadow: 0 0 5px var(--glow);
   transition: height 0.07s linear;
 }
 
@@ -317,41 +386,50 @@ body {
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text);
-  font-size: 13px;
+  border: 1px solid var(--accent-line);
+  clip-path: polygon(
+    var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)),
+    calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut)
+  );
+  background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 20%, var(--panel-b)), color-mix(in srgb, var(--accent) 6%, var(--panel-b)));
+  color: var(--header);
+  font-family: "Exo", system-ui, sans-serif;
+  font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s,
+  transition: background 0.15s, border-color 0.15s, color 0.15s,
     transform 0.06s ease, filter 0.06s ease;
 }
 .pill:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.28);
+  background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 34%, var(--panel-b)), color-mix(in srgb, var(--accent) 12%, var(--panel-b)));
+  border-color: var(--accent);
 }
 .pill.solid {
-  background: #d8d8d8;
-  color: #141414;
-  border-color: transparent;
+  background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 80%, #fff), color-mix(in srgb, var(--accent) 55%, var(--panel)));
+  color: #06121a;
+  border-color: var(--accent);
 }
 .pill.solid:hover {
-  background: #ececec;
+  background: linear-gradient(150deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #fff));
 }
+/* recording-active toggle goes alert-red */
 .pill.active {
-  background: rgba(255, 90, 90, 0.18);
-  color: #ffcaca;
-  border-color: rgba(255, 90, 90, 0.45);
+  background: linear-gradient(150deg, color-mix(in srgb, var(--alert) 26%, var(--panel-b)), color-mix(in srgb, var(--alert) 8%, var(--panel-b)));
+  color: color-mix(in srgb, var(--alert) 55%, #fff);
+  border-color: var(--alert-line);
 }
 .pill.active:hover {
-  background: rgba(255, 90, 90, 0.26);
+  background: linear-gradient(150deg, color-mix(in srgb, var(--alert) 38%, var(--panel-b)), color-mix(in srgb, var(--alert) 14%, var(--panel-b)));
+  border-color: var(--alert);
 }
 .rec-icon {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--danger);
+  box-shadow: 0 0 6px var(--alert-glow);
 }
 .pill.active .rec-icon {
   border-radius: 2px;
@@ -359,17 +437,21 @@ body {
 
 .mini-btn {
   padding: 7px 13px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-soft);
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+  background: color-mix(in srgb, var(--panel) 45%, transparent);
   color: var(--text-dim);
-  font-size: 12px;
+  font-family: "Exo", system-ui, sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   cursor: pointer;
   transition: all 0.15s;
 }
 .mini-btn:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.12);
+  color: var(--header);
+  border-color: var(--accent-line);
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel-b));
 }
 
 /* ── press / active feedback (all buttons) ────────────────────
@@ -380,9 +462,6 @@ body {
 .mini-btn:active {
   transform: translateY(1px) scale(0.96);
   filter: brightness(0.85);
-}
-.icon-btn:active {
-  background: rgba(255, 255, 255, 0.16);
 }
 
 /* ── config form ──────────────────────────────────────────── */
@@ -408,12 +487,13 @@ input[type="password"] {
   border-radius: 8px;
   color: var(--text);
   padding: 8px 10px;
+  font-family: "Exo", system-ui, sans-serif;
   font-size: 13px;
   outline: none;
   user-select: text;
 }
 input:focus {
-  border-color: rgba(255, 255, 255, 0.4);
+  border-color: var(--accent-line);
 }
 input[type="checkbox"] {
   width: 15px;
@@ -458,12 +538,12 @@ input[type="checkbox"] {
   margin-left: auto;
 }
 kbd {
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
   border: 1px solid var(--border);
   border-bottom-width: 2px;
   border-radius: 4px;
   padding: 2px 6px;
-  font-family: ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 11px;
   color: var(--text);
 }
@@ -474,5 +554,5 @@ kbd {
 }
 
 ::selection {
-  background: rgba(255, 255, 255, 0.22);
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
 }

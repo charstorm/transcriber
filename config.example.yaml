@@ -41,6 +41,16 @@ vad:
   # Deeper than reshka's 300ms to offset Silero v5's later onset detection.
   pre_speech_pad_ms: 700
 
+# Theme: 5 base color tokens. Any CSS color works (hex, rgb(), etc). Omit a key
+# to keep its default; the UI derives all other shades (borders, glows, muted
+# text) from these automatically. Defaults shown below = the dark navy/cyan HUD.
+# theme:
+#   bg: "#070a11"      # window background (darkest)
+#   panel: "#101c2b"   # raised surfaces / tiles
+#   line: "#8fb2c9"    # borders + body/muted text base
+#   accent: "#46e6f6"  # primary accent (listening, buttons, glow)
+#   alert: "#ff5a6a"   # errors + recording-active state
+
 # Extra transcription rules appended to the system prompt as bullet points (same
 # mechanism as reshka). Omit the key entirely to send the base prompt only.
 # config_instructions:

@@ -230,6 +230,22 @@ function loadConfig() {
   }
 }
 
+// Apply a `theme:` block from config.yaml onto the CSS base tokens. Accepts any
+// CSS color string; only the 5 known keys are honored, each mapped to its var.
+// styles.css derives all other tones from these via color-mix.
+function applyTheme(theme) {
+  const MAP = { bg: "--bg", panel: "--panel", line: "--line", accent: "--accent", alert: "--alert" };
+  const applied = {};
+  for (const [key, cssVar] of Object.entries(MAP)) {
+    const val = theme[key];
+    if (typeof val === "string" && val.trim()) {
+      document.documentElement.style.setProperty(cssVar, val.trim());
+      applied[key] = val.trim();
+    }
+  }
+  if (Object.keys(applied).length) log("theme applied:", JSON.stringify(applied));
+}
+
 // Merge ~/.config/transcriber/config.yaml (parsed by Rust) over the in-app
 // defaults. A missing file or missing keys leave the defaults untouched. The
 // file is the source of truth for model/endpoint/key and VAD tuning.
@@ -259,6 +275,13 @@ async function loadFileConfig() {
       .map((i) => String(i).trim())
       .filter(Boolean);
     buildSystemPrompt(config.configInstructions);
+  }
+
+  // theme: 5 base color tokens (bg/panel/line/accent/alert). Everything else in
+  // styles.css derives from these via color-mix, so overriding one cascades.
+  // Only keys present in the file are applied; the rest keep the CSS defaults.
+  if (file.theme && typeof file.theme === "object") {
+    applyTheme(file.theme);
   }
 
   const v = file.vad;
