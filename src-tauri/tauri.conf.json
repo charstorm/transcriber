@@ -14,10 +14,11 @@
     "windows": [
       {
         "title": "transcriber",
-        "width": 900,
-        "height": 438,
+        "width": 1080,
+        "height": 482,
         "minWidth": 570,
         "minHeight": 350,
+        "center": true,
         "decorations": false,
         "alwaysOnTop": true,
         "transparent": false,
