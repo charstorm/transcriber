@@ -251,23 +251,23 @@ body {
 }
 
 /* ── transcript view (controls BELOW the transcript) ──────────── */
-/* outer frame: 5px gap on every side between this border and .ta-wrap,
+/* outer frame: 10px gap on every side between this border and .ta-wrap,
    giving the transcript panel a distinct outer boundary. */
 .ta-frame {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  padding: 5px;
-  border: 1px solid var(--accent-line);
-  background: #000;
-}
-
-.ta-wrap {
   position: relative; /* anchors the ::before segmented frame */
   flex: 1;
   min-height: 0;
   display: flex;
+  padding: 10px;
+  background: #000;
+}
+
+.ta-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
   padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   /* flat near-black panel, no gradient sweep — a very faint radial glow
      anchored top-left (so it doesn't read as flat-dead-black), plus a faint
      grid for texture. background-size controls the cell spacing (16px)
@@ -288,7 +288,7 @@ body {
    A full-perimeter border ring, then masked so the centre span of every edge
    is erased (leaving four corner brackets). Dimmed 20% off full accent — no
    audio-reactive flicker (was pulsing brightness with live energy). */
-.ta-wrap::before {
+.ta-frame::before {
   content: "";
   position: absolute;
   inset: 0;

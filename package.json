@@ -4,12 +4,16 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "previte:dev": "node scripts/copy-vad-assets.mjs && node scripts/copy-fonts.mjs",
+    "vite:dev": "vite",
     "predev": "node scripts/copy-vad-assets.mjs && node scripts/copy-fonts.mjs",
-    "dev": "vite",
+    "dev": "tauri dev",
     "prebuild": "node scripts/copy-vad-assets.mjs && node scripts/copy-fonts.mjs",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "predeploy": "npm run build && tauri build --no-bundle",
+    "deploy": "cp -f src-tauri/target/release/transcriber ~/scripts/transcriber.new && mv -f ~/scripts/transcriber.new ~/scripts/transcriber"
   },
   "dependencies": {
     "@fontsource/exo": "^5.2.8",
