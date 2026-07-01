@@ -309,6 +309,23 @@ body {
   mask-composite: intersect;
 }
 
+/* mid-edge tick marks: a short dash centered on each of the four edges,
+   dimmer than the corner brackets so they read as accents, not equal-weight
+   elements. Same 2px thickness as the corner border for visual continuity. */
+.ta-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  --tick-len: 44px;
+  --tick-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background:
+    linear-gradient(var(--tick-color), var(--tick-color)) top center / var(--tick-len) 2px no-repeat,
+    linear-gradient(var(--tick-color), var(--tick-color)) bottom center / var(--tick-len) 2px no-repeat,
+    linear-gradient(var(--tick-color), var(--tick-color)) left center / 2px var(--tick-len) no-repeat,
+    linear-gradient(var(--tick-color), var(--tick-color)) right center / 2px var(--tick-len) no-repeat;
+}
+
 #transcript {
   flex: 1;
   min-height: 0;
