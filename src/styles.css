@@ -60,6 +60,7 @@
 
   --radius: 12px;
   --cut: 8px; /* corner-cut size for HUD tiles */
+  --au: 0; /* live audio energy 0..1, set per-frame by renderViz() in app.js */
 
   font-family: "Exo", "Ubuntu Sans", system-ui, sans-serif;
   font-weight: 300;
@@ -253,21 +254,57 @@ body {
 
 /* ── transcript view (controls BELOW the transcript) ──────────── */
 .ta-wrap {
+  position: relative; /* anchors the ::before segmented frame */
   flex: 1;
   min-height: 0;
   display: flex;
   padding: 14px 16px;
-  /* corner-cut HUD tile; border drawn as inset shadow so it survives the clip */
-  clip-path: polygon(
-    var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)),
-    calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut)
-  );
+  /* glass reflection: a slanted light streak sweeping across the panel over a
+     diagonal navy base. The bright band = the reflection you see on glass.
+     Tinted from theme tokens. */
   background:
-    radial-gradient(130% 90% at 12% 0%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 55%),
-    linear-gradient(152deg, color-mix(in srgb, var(--panel) 70%, #000) 0%, var(--bg) 52%, var(--panel-b) 100%);
+    linear-gradient(122deg,
+      transparent 34%,
+      color-mix(in srgb, var(--accent) 9%, transparent) 46%,
+      color-mix(in srgb, #eafcff 12%, transparent) 50%,
+      color-mix(in srgb, var(--accent) 9%, transparent) 54%,
+      transparent 66%),
+    linear-gradient(150deg, color-mix(in srgb, var(--panel) 66%, #000) 0%, var(--bg) 55%, #04070d 100%);
+  /* inner glow + depth react to live audio energy (--au). The visible EDGE is
+     the segmented frame in ::before. Both the inner bloom and the outer
+     drop-shadow are ZERO at rest (au=0) so no faint full-perimeter outline
+     shows — only the cut frame. They grow as you speak. */
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--line) 12%, transparent),
+    inset 0 0 calc(6px + var(--au) * 30px) color-mix(in srgb, var(--accent) calc(var(--au) * 38%), transparent),
     inset 0 4px 26px rgba(0, 0, 0, 0.55);
+  filter:
+    drop-shadow(0 0 calc(2px + var(--au) * 8px) color-mix(in srgb, var(--accent) calc(var(--au) * 60%), transparent))
+    drop-shadow(0 0 calc(4px + var(--au) * 22px) color-mix(in srgb, var(--accent) calc(var(--au) * 55%), transparent));
+  transition: box-shadow 0.09s linear, filter 0.09s linear;
+}
+
+/* segmented HUD frame: solid corners, a gap cut in the MIDDLE of each side.
+   A full-perimeter border ring, then masked so the centre span of every edge
+   is erased (leaving four corner brackets). Border colour reacts to --au. */
+.ta-wrap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 2px solid color-mix(in srgb, var(--accent) calc(40% + var(--au) * 55%), transparent);
+  /* two masks intersected: a vertical gap (erases top/bottom middles) and a
+     horizontal gap (erases left/right middles). --seg = half the gap span
+     around each edge's centre (bigger = longer cut). */
+  --seg: 16%;
+  -webkit-mask:
+    linear-gradient(90deg, #000 0 calc(50% - var(--seg)), transparent calc(50% - var(--seg)) calc(50% + var(--seg)), #000 calc(50% + var(--seg)) 100%),
+    linear-gradient(180deg, #000 0 calc(50% - var(--seg)), transparent calc(50% - var(--seg)) calc(50% + var(--seg)), #000 calc(50% + var(--seg)) 100%);
+  -webkit-mask-composite: source-in;
+  mask:
+    linear-gradient(90deg, #000 0 calc(50% - var(--seg)), transparent calc(50% - var(--seg)) calc(50% + var(--seg)), #000 calc(50% + var(--seg)) 100%),
+    linear-gradient(180deg, #000 0 calc(50% - var(--seg)), transparent calc(50% - var(--seg)) calc(50% + var(--seg)), #000 calc(50% + var(--seg)) 100%);
+  mask-composite: intersect;
+  transition: border-color 0.09s linear;
 }
 
 #transcript {
@@ -277,7 +314,9 @@ body {
   resize: none;
   background: transparent;
   border: none;
-  color: var(--body);
+  /* bright, slight cyan lean + faint glow → terminal-readout feel. */
+  color: color-mix(in srgb, var(--header) 86%, var(--accent));
+  text-shadow: 0 0 8px color-mix(in srgb, var(--accent) 18%, transparent);
   font-size: 16px;
   line-height: 1.7;
   font-family: "JetBrains Mono", ui-monospace, monospace;
@@ -333,8 +372,8 @@ body {
   color: var(--text-dim);
   padding: 4px 10px;
   clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
-  background: color-mix(in srgb, var(--panel) 45%, transparent);
-  box-shadow: inset 0 0 0 1px var(--border-soft);
+  background: color-mix(in srgb, var(--accent) 5%, color-mix(in srgb, var(--panel) 45%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
   white-space: nowrap;
   transition: color 0.2s;
 }
@@ -439,9 +478,11 @@ body {
 
 .mini-btn {
   padding: 7px 13px;
-  border: 1px solid var(--border-soft);
+  /* faint always-on cyan edge (was neutral --border-soft) so the whole toolbar
+     reads as one glowing HUD, not just the red STOP control. */
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
   clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
-  background: color-mix(in srgb, var(--panel) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 5%, color-mix(in srgb, var(--panel) 45%, transparent));
   color: var(--text-dim);
   font-family: "Exo", system-ui, sans-serif;
   font-size: 11px;
