@@ -37,7 +37,7 @@
   --muted2: color-mix(in srgb, var(--body) 50%, var(--bg));
 
   --glow: color-mix(in srgb, var(--accent) 22%, transparent);
-  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-soft: color-mix(in srgb, var(--accent) 26%, transparent);
   --accent-line: color-mix(in srgb, var(--accent) 50%, transparent);
   --alert-soft: color-mix(in srgb, var(--alert) 13%, transparent);
   --alert-line: color-mix(in srgb, var(--alert) 52%, transparent);
@@ -82,16 +82,10 @@ html {
   background: var(--bg);
 }
 
-/* body IS the window surface (solid). navy gradient + faint accent glow.
-   Each stop: +20% saturation (relative-color hsl(from ...)) then +10% white
-   to lighten — outer frame only, the transcript panel stays untouched. */
+/* body IS the window surface (solid). flat, saturated navy-cyan — no
+   gradient — outer frame only, the transcript panel stays untouched. */
 body {
-  background:
-    radial-gradient(120% 80% at 12% 0%, var(--accent-soft), transparent 55%),
-    linear-gradient(158deg,
-      color-mix(in srgb, hsl(from var(--panel) h calc(s * 1.2) l) 90%, #fff) 0%,
-      color-mix(in srgb, hsl(from var(--bg) h calc(s * 1.2) l) 90%, #fff) 62%,
-      color-mix(in srgb, hsl(from var(--panel-b) h calc(s * 1.2) l) 90%, #fff) 100%);
+  background: color-mix(in srgb, hsl(from var(--bg) h calc(s * 1.7) l) 92%, var(--accent));
   border: 1px solid var(--border);
   /* square corners: GNOME/Wayland draws a rectangular window shadow that can't
      be disabled on Linux, so rounded corners leave a visible square overlay.
@@ -257,6 +251,17 @@ body {
 }
 
 /* ── transcript view (controls BELOW the transcript) ──────────── */
+/* outer frame: 5px gap on every side between this border and .ta-wrap,
+   giving the transcript panel a distinct outer boundary. */
+.ta-frame {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  padding: 5px;
+  border: 1px solid var(--accent-line);
+  background: #000;
+}
+
 .ta-wrap {
   position: relative; /* anchors the ::before segmented frame */
   flex: 1;
@@ -265,14 +270,14 @@ body {
   padding: 14px 16px;
   /* flat near-black panel, no gradient sweep — a very faint radial glow
      anchored top-left (so it doesn't read as flat-dead-black), plus a faint
-     grid for texture. background-size controls the cell spacing (24px)
+     grid for texture. background-size controls the cell spacing (16px)
      independently of the 1px line gradients — a 5px cell was too fine and
      read as visual noise/moiré instead of a grid. */
   background-image:
     radial-gradient(120% 90% at 15% 0%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 60%),
-    linear-gradient(to right, color-mix(in srgb, var(--accent) 10%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in srgb, var(--accent) 10%, transparent) 1px, transparent 1px);
-  background-size: 100% 100%, 24px 24px, 24px 24px;
+    linear-gradient(to right, color-mix(in srgb, var(--accent) 11%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--accent) 11%, transparent) 1px, transparent 1px);
+  background-size: 100% 100%, 16px 16px, 16px 16px;
   background-color: #04070d;
   /* static inner shadow for depth only — no audio-reactive glow (was
      flickering with every frame of live energy; caused eyestrain). */
