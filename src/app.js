@@ -205,18 +205,10 @@ function renderViz(rms) {
     const h = Math.max(6, Math.min(100, Math.sqrt(vizHist[i]) * 260));
     vizBars[i].style.height = h + "%";
   }
-  // drive the transcript-panel glow off live energy (--au: 0..1); consumed by
-  // .ta-wrap in styles.css. sqrt(rms) tops out ~0.38; *3.6 pushes normal speech
-  // toward the top of the range so the glow actually reads.
-  document.documentElement.style.setProperty(
-    "--au",
-    Math.min(1, Math.sqrt(rms) * 3.6).toFixed(3)
-  );
 }
 function resetViz() {
   vizHist.fill(0);
   for (const b of vizBars) b.style.height = "20%";
-  document.documentElement.style.setProperty("--au", "0");
 }
 
 // ── queue / in-flight indicator ───────────────────────────────────────────────

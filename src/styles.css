@@ -60,7 +60,6 @@
 
   --radius: 12px;
   --cut: 8px; /* corner-cut size for HUD tiles */
-  --au: 0; /* live audio energy 0..1, set per-frame by renderViz() in app.js */
 
   font-family: "Exo", "Ubuntu Sans", system-ui, sans-serif;
   font-weight: 300;
@@ -83,11 +82,16 @@ html {
   background: var(--bg);
 }
 
-/* body IS the window surface (solid). navy gradient + faint accent glow. */
+/* body IS the window surface (solid). navy gradient + faint accent glow.
+   Each stop: +20% saturation (relative-color hsl(from ...)) then +10% white
+   to lighten — outer frame only, the transcript panel stays untouched. */
 body {
   background:
     radial-gradient(120% 80% at 12% 0%, var(--accent-soft), transparent 55%),
-    linear-gradient(158deg, var(--panel) 0%, var(--bg) 62%, var(--panel-b) 100%);
+    linear-gradient(158deg,
+      color-mix(in srgb, hsl(from var(--panel) h calc(s * 1.2) l) 90%, #fff) 0%,
+      color-mix(in srgb, hsl(from var(--bg) h calc(s * 1.2) l) 90%, #fff) 62%,
+      color-mix(in srgb, hsl(from var(--panel-b) h calc(s * 1.2) l) 90%, #fff) 100%);
   border: 1px solid var(--border);
   /* square corners: GNOME/Wayland draws a rectangular window shadow that can't
      be disabled on Linux, so rounded corners leave a visible square overlay.
@@ -259,52 +263,45 @@ body {
   min-height: 0;
   display: flex;
   padding: 14px 16px;
-  /* glass reflection: a slanted light streak sweeping across the panel over a
-     diagonal navy base. The bright band = the reflection you see on glass.
-     Tinted from theme tokens. */
-  background:
-    linear-gradient(122deg,
-      transparent 34%,
-      color-mix(in srgb, var(--accent) 9%, transparent) 46%,
-      color-mix(in srgb, #eafcff 12%, transparent) 50%,
-      color-mix(in srgb, var(--accent) 9%, transparent) 54%,
-      transparent 66%),
-    linear-gradient(150deg, color-mix(in srgb, var(--panel) 66%, #000) 0%, var(--bg) 55%, #04070d 100%);
-  /* inner glow + depth react to live audio energy (--au). The visible EDGE is
-     the segmented frame in ::before. Both the inner bloom and the outer
-     drop-shadow are ZERO at rest (au=0) so no faint full-perimeter outline
-     shows — only the cut frame. They grow as you speak. */
-  box-shadow:
-    inset 0 0 calc(6px + var(--au) * 30px) color-mix(in srgb, var(--accent) calc(var(--au) * 38%), transparent),
-    inset 0 4px 26px rgba(0, 0, 0, 0.55);
-  filter:
-    drop-shadow(0 0 calc(2px + var(--au) * 8px) color-mix(in srgb, var(--accent) calc(var(--au) * 60%), transparent))
-    drop-shadow(0 0 calc(4px + var(--au) * 22px) color-mix(in srgb, var(--accent) calc(var(--au) * 55%), transparent));
-  transition: box-shadow 0.09s linear, filter 0.09s linear;
+  /* flat near-black panel, no gradient sweep — a very faint radial glow
+     anchored top-left (so it doesn't read as flat-dead-black), plus a faint
+     grid for texture. background-size controls the cell spacing (24px)
+     independently of the 1px line gradients — a 5px cell was too fine and
+     read as visual noise/moiré instead of a grid. */
+  background-image:
+    radial-gradient(120% 90% at 15% 0%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 60%),
+    linear-gradient(to right, color-mix(in srgb, var(--accent) 10%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--accent) 10%, transparent) 1px, transparent 1px);
+  background-size: 100% 100%, 24px 24px, 24px 24px;
+  background-color: #04070d;
+  /* static inner shadow for depth only — no audio-reactive glow (was
+     flickering with every frame of live energy; caused eyestrain). */
+  box-shadow: inset 0 4px 26px rgba(0, 0, 0, 0.55);
 }
 
 /* segmented HUD frame: solid corners, a gap cut in the MIDDLE of each side.
    A full-perimeter border ring, then masked so the centre span of every edge
-   is erased (leaving four corner brackets). Border colour reacts to --au. */
+   is erased (leaving four corner brackets). Dimmed 20% off full accent — no
+   audio-reactive flicker (was pulsing brightness with live energy). */
 .ta-wrap::before {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  border: 2px solid color-mix(in srgb, var(--accent) calc(40% + var(--au) * 55%), transparent);
+  border: 2px solid color-mix(in srgb, var(--accent) 80%, transparent);
   /* two masks intersected: a vertical gap (erases top/bottom middles) and a
-     horizontal gap (erases left/right middles). --seg = half the gap span
-     around each edge's centre (bigger = longer cut). */
-  --seg: 16%;
+     horizontal gap (erases left/right middles). --arm is a FIXED px length
+     (not %) so the corner brackets are the same length on every edge
+     regardless of the panel's width/height ratio. */
+  --arm: 46px;
   -webkit-mask:
-    linear-gradient(90deg, #000 0 calc(50% - var(--seg)), transparent calc(50% - var(--seg)) calc(50% + var(--seg)), #000 calc(50% + var(--seg)) 100%),
-    linear-gradient(180deg, #000 0 calc(50% - var(--seg)), transparent calc(50% - var(--seg)) calc(50% + var(--seg)), #000 calc(50% + var(--seg)) 100%);
+    linear-gradient(90deg, #000 0 var(--arm), transparent var(--arm) calc(100% - var(--arm)), #000 calc(100% - var(--arm)) 100%),
+    linear-gradient(180deg, #000 0 var(--arm), transparent var(--arm) calc(100% - var(--arm)), #000 calc(100% - var(--arm)) 100%);
   -webkit-mask-composite: source-in;
   mask:
-    linear-gradient(90deg, #000 0 calc(50% - var(--seg)), transparent calc(50% - var(--seg)) calc(50% + var(--seg)), #000 calc(50% + var(--seg)) 100%),
-    linear-gradient(180deg, #000 0 calc(50% - var(--seg)), transparent calc(50% - var(--seg)) calc(50% + var(--seg)), #000 calc(50% + var(--seg)) 100%);
+    linear-gradient(90deg, #000 0 var(--arm), transparent var(--arm) calc(100% - var(--arm)), #000 calc(100% - var(--arm)) 100%),
+    linear-gradient(180deg, #000 0 var(--arm), transparent var(--arm) calc(100% - var(--arm)), #000 calc(100% - var(--arm)) 100%);
   mask-composite: intersect;
-  transition: border-color 0.09s linear;
 }
 
 #transcript {
@@ -314,9 +311,8 @@ body {
   resize: none;
   background: transparent;
   border: none;
-  /* bright, slight cyan lean + faint glow → terminal-readout feel. */
+  /* bright, slight cyan lean — no text glow (was causing eyestrain). */
   color: color-mix(in srgb, var(--header) 86%, var(--accent));
-  text-shadow: 0 0 8px color-mix(in srgb, var(--accent) 18%, transparent);
   font-size: 16px;
   line-height: 1.7;
   font-family: "JetBrains Mono", ui-monospace, monospace;
