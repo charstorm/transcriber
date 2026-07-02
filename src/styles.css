@@ -258,7 +258,7 @@ body {
   flex: 1;
   min-height: 0;
   display: flex;
-  padding: 10px;
+  padding: 16px;
   background: #000;
 }
 
@@ -293,7 +293,7 @@ body {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  border: 2px solid color-mix(in srgb, var(--accent) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 80%, transparent);
   /* two masks intersected: a vertical gap (erases top/bottom middles) and a
      horizontal gap (erases left/right middles). --arm is a FIXED px length
      (not %) so the corner brackets are the same length on every edge
@@ -309,21 +309,21 @@ body {
   mask-composite: intersect;
 }
 
-/* mid-edge tick marks: a short dash centered on each of the four edges,
-   dimmer than the corner brackets so they read as accents, not equal-weight
-   elements. Same 2px thickness as the corner border for visual continuity. */
+/* mid-edge tick marks: a dash centered on each of the four edges, matching
+   the corner brackets' color/thickness so they read as part of the same
+   frame rather than a dimmer accent. */
 .ta-frame::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  --tick-len: 44px;
-  --tick-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  --tick-len: 88px;
+  --tick-color: color-mix(in srgb, var(--accent) 80%, transparent);
   background:
-    linear-gradient(var(--tick-color), var(--tick-color)) top center / var(--tick-len) 2px no-repeat,
-    linear-gradient(var(--tick-color), var(--tick-color)) bottom center / var(--tick-len) 2px no-repeat,
-    linear-gradient(var(--tick-color), var(--tick-color)) left center / 2px var(--tick-len) no-repeat,
-    linear-gradient(var(--tick-color), var(--tick-color)) right center / 2px var(--tick-len) no-repeat;
+    linear-gradient(var(--tick-color), var(--tick-color)) top center / var(--tick-len) 1px no-repeat,
+    linear-gradient(var(--tick-color), var(--tick-color)) bottom center / var(--tick-len) 1px no-repeat,
+    linear-gradient(var(--tick-color), var(--tick-color)) left center / 1px var(--tick-len) no-repeat,
+    linear-gradient(var(--tick-color), var(--tick-color)) right center / 1px var(--tick-len) no-repeat;
 }
 
 #transcript {
