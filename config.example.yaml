@@ -24,11 +24,11 @@ paste_key: ctrl+shift+v
 # the previously-focused window after the transcriber hides.
 paste_delay_ms: 800
 
-# Voice commands. After each utterance is transcribed, its text is normalized
-# (punctuation stripped, lowercased, whitespace collapsed) and compared — as a
-# STANDALONE utterance — against each trigger below. On a match the action fires
-# instead of the text being written to the canvas, so you never touch a key.
-# Speak the phrase on its own (a short pause segments it as its own utterance).
+# Voice commands. After each utterance is transcribed, its text is checked for a
+# trigger phrase at the END — spoken on its own, or trailing a dictated sentence
+# (the voice detector often fails to cut the phrase off cleanly). On a match the
+# trigger is stripped and the action fires; any sentence before it is kept and
+# pasted as normal content. Matching ignores case and punctuation. No key needed.
 #
 #   action  what to do. Supported: paste_enter_clear = paste the whole canvas
 #           into the app behind the transcriber, press Enter, then clear it.

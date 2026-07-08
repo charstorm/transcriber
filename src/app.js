@@ -75,10 +75,11 @@ const DEFAULTS = {
   // key ydotool presses AFTER the paste for the paste_enter_clear voice command
   // (submits the pasted text). ydotool key name — "Enter" maps to KEY_ENTER.
   enterKey: "Enter",
-  // Voice commands. After each utterance is transcribed, its text is normalized
-  // (punctuation stripped, lowercased, whitespace collapsed) and compared — as a
-  // STANDALONE utterance — against each command's trigger. On a match the action
-  // fires instead of the text being written to the canvas. `say` is the spoken
+  // Voice commands. After each utterance is transcribed, its text is checked for
+  // a command trigger at the END (standalone, or trailing a dictated sentence —
+  // the VAD often fails to cut the phrase off on its own). On a match the trigger
+  // phrase is stripped and the action fires; any preceding sentence is kept as
+  // content. `say` is the spoken
   // phrase; optional `emit` is an exact string to match instead (reserved for
   // later prompt-steering that pins the model's spelling). Configurable via
   // config.yaml `commands:`. Action paste_enter_clear = paste the whole canvas
@@ -418,16 +419,41 @@ function normalizePhrase(s) {
     .trim();
 }
 
-// Does this just-transcribed utterance match a configured voice command? We
-// require a STANDALONE match — the whole normalized utterance must equal a
-// command's normalized trigger (`emit` if set, else `say`) — so a command only
-// fires when spoken on its own, never mid-sentence. Returns the command or null.
-function matchCommand(text) {
-  const norm = normalizePhrase(text);
-  if (!norm) return null;
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Build an anchored regex that matches a command's trigger at the END of an
+// utterance — either standalone or trailing a dictated sentence (the VAD often
+// fails to segment the phrase on its own, so "…send this message strike and
+// reload" must still fire). Words are matched case-insensitively with any
+// punctuation/whitespace between them (mirrors normalizePhrase), the trigger
+// must sit on a word boundary (^ or a non-alphanumeric), and trailing
+// punctuation is tolerated. Returns null if the trigger normalizes to empty.
+function commandRegex(cmd) {
+  const trigger = normalizePhrase(cmd.emit || cmd.say);
+  if (!trigger) return null;
+  const body = trigger.split(" ").map(escapeRegExp).join("[^a-z0-9]+");
+  return new RegExp("(^|[^a-z0-9])" + body + "[^a-z0-9]*$", "i");
+}
+
+// Detect a command trigger at the end of a just-transcribed utterance. Returns
+// { cmd, leading } where `leading` is the utterance text with the trigger (and
+// its separator) stripped off — "" for a standalone command, or the dictated
+// sentence that preceded the trigger otherwise. That leading text is real
+// content and gets pasted; only the trigger phrase is removed. Returns null when
+// nothing matches.
+function detectCommand(text) {
+  const raw = String(text).trim();
+  if (!raw) return null;
   for (const cmd of config.commands) {
-    const trigger = normalizePhrase(cmd.emit || cmd.say);
-    if (trigger && trigger === norm) return cmd;
+    const re = commandRegex(cmd);
+    if (!re) continue;
+    const m = raw.match(re);
+    if (m) {
+      const leading = raw.slice(0, m.index + m[1].length).replace(/\s+$/, "");
+      return { cmd, leading };
+    }
   }
   return null;
 }
@@ -528,14 +554,20 @@ function settleOrdered(seq, text) {
     pendingResults.delete(nextToFlush);
     nextToFlush++;
     if (!t) continue;
-    // A standalone command utterance fires its action and is NOT written to the
-    // canvas; anything else is normal transcript text. By flush order, all
-    // preceding content has already landed, so paste_enter_clear sees a complete
-    // canvas.
-    const cmd = matchCommand(t);
-    if (cmd) {
-      log(`voice command matched: "${t}" -> ${cmd.action}`);
-      runCommand(cmd).catch((e) => log("voice command failed:", String(e)));
+    // A trailing/standalone command trigger fires its action; the trigger phrase
+    // itself is never written to the canvas. Any dictated sentence that preceded
+    // the trigger (VAD glued them together) IS content — append it first so
+    // paste_enter_clear sees a complete canvas. By flush order, all earlier
+    // utterances have already landed too.
+    const det = detectCommand(t);
+    if (det) {
+      if (det.leading) {
+        log(`voice command: "${t}" -> ${det.cmd.action} (kept leading text, stripped trigger)`);
+        appendTranscript(det.leading);
+      } else {
+        log(`voice command (standalone): "${t}" -> ${det.cmd.action}`);
+      }
+      runCommand(det.cmd).catch((e) => log("voice command failed:", String(e)));
     } else {
       appendTranscript(t);
     }
