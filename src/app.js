@@ -72,6 +72,18 @@ const DEFAULTS = {
   pasteKey: "ctrl+shift+v",
   // delay before the paste keystroke fires, so focus returns to the prior app.
   pasteDelayMs: 800,
+  // key ydotool presses AFTER the paste for the paste_enter_clear voice command
+  // (submits the pasted text). ydotool key name — "Enter" maps to KEY_ENTER.
+  enterKey: "Enter",
+  // Voice commands. After each utterance is transcribed, its text is normalized
+  // (punctuation stripped, lowercased, whitespace collapsed) and compared — as a
+  // STANDALONE utterance — against each command's trigger. On a match the action
+  // fires instead of the text being written to the canvas. `say` is the spoken
+  // phrase; optional `emit` is an exact string to match instead (reserved for
+  // later prompt-steering that pins the model's spelling). Configurable via
+  // config.yaml `commands:`. Action paste_enter_clear = paste the whole canvas
+  // into the app behind us, press Enter, then clear the canvas — all hands-free.
+  commands: [{ action: "paste_enter_clear", say: "strike and reload" }],
   // retries on a failed transcription request (total attempts = maxRetries + 1),
   // with exponential backoff (1s, 2s, 4s, 8s …) between them. Matched to reshka,
   // which makes 2 attempts total (reshka_tui.py:256), i.e. 1 retry.
@@ -269,6 +281,24 @@ async function loadFileConfig() {
   if (bool(file.auto_paste) !== undefined) config.autoPaste = bool(file.auto_paste);
   if (str(file.paste_key)) config.pasteKey = str(file.paste_key);
   if (num(file.paste_delay_ms) !== undefined) config.pasteDelayMs = Math.max(0, Math.round(num(file.paste_delay_ms)));
+  if (str(file.enter_key)) config.enterKey = str(file.enter_key);
+
+  // Voice commands: an explicit list in the file REPLACES the built-in defaults
+  // (the file is the source of truth). Each entry needs at least an action and a
+  // `say`; `emit` is optional. Malformed entries are dropped with a log line.
+  if (Array.isArray(file.commands)) {
+    config.commands = file.commands
+      .map((c) => {
+        if (!c || typeof c !== "object" || !str(c.action) || !str(c.say)) {
+          log("config.yaml: skipping malformed command entry:", JSON.stringify(c));
+          return null;
+        }
+        const cmd = { action: str(c.action), say: str(c.say) };
+        if (str(c.emit)) cmd.emit = str(c.emit);
+        return cmd;
+      })
+      .filter(Boolean);
+  }
 
   if (Array.isArray(file.config_instructions)) {
     config.configInstructions = file.config_instructions
@@ -301,6 +331,7 @@ async function loadFileConfig() {
   log("config.yaml applied:", JSON.stringify({
     model: config.model, maxRetries: config.maxRetries,
     autoPaste: config.autoPaste, pasteKey: config.pasteKey, pasteDelayMs: config.pasteDelayMs,
+    enterKey: config.enterKey, commands: config.commands.map((c) => c.emit || c.say),
     vad: vadParams, configInstructions: config.configInstructions.length,
   }));
 }
@@ -375,6 +406,76 @@ function clearTranscript() {
   localStorage.removeItem(TRANSCRIPT_KEY);
 }
 
+// ── voice commands ───────────────────────────────────────────────────────────
+// Normalize a phrase for command matching: lowercase, drop everything but
+// letters/digits/spaces (kills the punctuation the model tends to add — "Strike
+// and reload." → "strike and reload"), collapse whitespace runs, trim.
+function normalizePhrase(s) {
+  return String(s)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Does this just-transcribed utterance match a configured voice command? We
+// require a STANDALONE match — the whole normalized utterance must equal a
+// command's normalized trigger (`emit` if set, else `say`) — so a command only
+// fires when spoken on its own, never mid-sentence. Returns the command or null.
+function matchCommand(text) {
+  const norm = normalizePhrase(text);
+  if (!norm) return null;
+  for (const cmd of config.commands) {
+    const trigger = normalizePhrase(cmd.emit || cmd.say);
+    if (trigger && trigger === norm) return cmd;
+  }
+  return null;
+}
+
+// Run a matched command's action. paste_enter_clear is the only action for now;
+// foreground/background are planned (see tmp/next.md).
+async function runCommand(cmd) {
+  switch (cmd.action) {
+    case "paste_enter_clear":
+      await pasteEnterClear();
+      break;
+    default:
+      log(`voice command: unknown action '${cmd.action}' (ignored)`);
+  }
+}
+
+// paste_enter_clear: paste the whole canvas, press Enter, then wipe the canvas
+// for the next turn. NO window hide — the app is left exactly where it is and
+// keeps recording. (Whether the paste lands in another app depends on which
+// window has focus; managing that is the deferred foreground/background work.)
+async function pasteEnterClear() {
+  const text = transcriptEl.value.trim();
+  if (!text) {
+    log("paste_enter_clear: canvas empty, nothing to send");
+    return;
+  }
+  if (!(config.autoPaste && pasteAvailable)) {
+    log(`paste_enter_clear: paste unavailable (autoPaste=${config.autoPaste}, available=${pasteAvailable})`);
+    return;
+  }
+  try {
+    // wl-copy loads the clipboard synchronously inside paste_transcript, so the
+    // text is safely captured before we clear the textarea below.
+    await invoke("paste_transcript", {
+      text,
+      pasteKey: config.pasteKey,
+      delayMs: config.pasteDelayMs,
+      enterKey: config.enterKey, // press Enter after the paste
+    });
+    clearTranscript();
+    log(`paste_enter_clear: sent ${text.length} chars + Enter, canvas cleared`);
+    await sleep(150); // let the detached ydotool finish spawning
+  } catch (err) {
+    console.error("paste_enter_clear failed:", err);
+    log("paste_enter_clear failed:", String(err));
+  }
+}
+
 // ── audio → WAV (16kHz mono PCM16) ────────────────────────────────────────────
 function float32ToWavBase64(float32, sampleRate = 16000) {
   const len = float32.length;
@@ -426,7 +527,18 @@ function settleOrdered(seq, text) {
     const t = pendingResults.get(nextToFlush);
     pendingResults.delete(nextToFlush);
     nextToFlush++;
-    if (t) appendTranscript(t);
+    if (!t) continue;
+    // A standalone command utterance fires its action and is NOT written to the
+    // canvas; anything else is normal transcript text. By flush order, all
+    // preceding content has already landed, so paste_enter_clear sees a complete
+    // canvas.
+    const cmd = matchCommand(t);
+    if (cmd) {
+      log(`voice command matched: "${t}" -> ${cmd.action}`);
+      runCommand(cmd).catch((e) => log("voice command failed:", String(e)));
+    } else {
+      appendTranscript(t);
+    }
   }
 }
 

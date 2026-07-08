@@ -24,6 +24,26 @@ paste_key: ctrl+shift+v
 # the previously-focused window after the transcriber hides.
 paste_delay_ms: 800
 
+# Voice commands. After each utterance is transcribed, its text is normalized
+# (punctuation stripped, lowercased, whitespace collapsed) and compared — as a
+# STANDALONE utterance — against each trigger below. On a match the action fires
+# instead of the text being written to the canvas, so you never touch a key.
+# Speak the phrase on its own (a short pause segments it as its own utterance).
+#
+#   action  what to do. Supported: paste_enter_clear = paste the whole canvas
+#           into the app behind the transcriber, press Enter, then clear it.
+#   say     the phrase you speak.
+#   emit    (optional) exact string to match instead of `say` — reserved for
+#           later prompt-steering that pins the model's spelling of a codeword.
+#
+# Providing this key REPLACES the built-in default (strike and reload). Omit it
+# to keep the default. Add multiple entries to map several phrases to an action.
+commands:
+  - action: paste_enter_clear
+    say: strike and reload
+# Key ydotool presses after the paste for paste_enter_clear (ydotool key name).
+enter_key: Enter
+
 # Voice-activity-detection tuning. Timings are in milliseconds.
 vad:
   # Confidence (0–1) for a frame to START speech. Lower = more sensitive, so

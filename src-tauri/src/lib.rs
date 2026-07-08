@@ -249,6 +249,10 @@ fn paste_transcript(
     text: String,
     paste_key: String,
     delay_ms: Option<u64>,
+    // When set, an extra key sequence pressed AFTER the paste (e.g. "Enter") in
+    // the same detached ydotool call — used by the paste_enter_clear voice
+    // command to paste-and-submit in one shot. None = paste only (Esc/X flow).
+    enter_key: Option<String>,
 ) -> Result<(), String> {
     // Defensive guard: never fire the paste shortcut for empty content. The
     // frontend already trims + skips empty, but enforce it here too so the
@@ -270,12 +274,20 @@ fn paste_transcript(
                 "Invalid paste_key '{paste_key}'. Use names joined by '+', e.g. ctrl+v or ctrl+shift+v."
             ));
         }
+        if let Some(ek) = &enter_key {
+            if !valid_paste_key(ek) {
+                return Err(format!(
+                    "Invalid enter_key '{ek}'. Use ydotool key names joined by '+', e.g. Enter."
+                ));
+            }
+        }
         let delay = delay_ms.unwrap_or(800).min(10_000);
         let socket = ydotool_socket();
         append_log(&format!(
-            "[paste] begin: {} chars, key={}, delay={}ms, socket={:?}",
+            "[paste] begin: {} chars, key={}, enter={:?}, delay={}ms, socket={:?}",
             text.len(),
             paste_key,
+            enter_key,
             delay,
             socket
         ));
@@ -305,12 +317,19 @@ fn paste_transcript(
         //    waiting (giving focus time to return to the previous window), and
         //    YDOTOOL_SOCKET is set explicitly so it always finds ydotoold.
         let mut cmd = Command::new("setsid");
-        cmd.arg("ydotool")
-            .arg("key")
-            .arg("--delay")
-            .arg(delay.to_string())
-            .arg(&paste_key)
-            .stdin(Stdio::null())
+        cmd.arg("ydotool").arg("key").arg("--delay").arg(delay.to_string());
+        // When an enter_key follows the paste (the paste_enter_clear voice
+        // command), add a per-keystroke gap so the target app has time to insert
+        // the pasted text before Enter submits it. ydotool presses each key
+        // sequence in argv order, so paste_key first, then enter_key.
+        if enter_key.is_some() {
+            cmd.arg("--key-delay").arg("40");
+        }
+        cmd.arg(&paste_key);
+        if let Some(ek) = &enter_key {
+            cmd.arg(ek);
+        }
+        cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         if let Some(s) = &socket {
@@ -325,7 +344,7 @@ fn paste_transcript(
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (text, paste_key, delay_ms);
+        let _ = (text, paste_key, delay_ms, enter_key);
         Err("Auto-paste is only implemented on Linux for now.".into())
     }
 }
