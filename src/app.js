@@ -448,7 +448,78 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // One transcription HTTP call. Throws on a non-OK response so the retry loop
 // can catch it; returns the cleaned transcript text (may be empty) on success.
+// config.endpoint is the full chat/completions URL; strip that suffix to get the
+// OpenRouter API base (…/api/v1). OpenRouter-only for now (models-API modality
+// probe below is OpenRouter-specific); other endpoints fall back to the LLM route.
+function apiBase() {
+  return config.endpoint.replace(/\/chat\/completions\/?$/, "");
+}
+
+// A model is either a transcription model (uses /audio/transcriptions, plain-text
+// response) or a chat LLM (uses /chat/completions, JSON envelope). We resolve the
+// kind once per model name and persist it to disk (Rust read_model_kinds/
+// write_model_kind), so only the first-ever use of a model pays the probe cost.
+const modelKindMem = new Map(); // model -> "transcription" | "llm" (this session)
+const modelKindInflight = new Map(); // model -> Promise, so parallel utterances
+//                                      don't probe the same model twice at once.
+
+async function detectModelKind(model) {
+  // OpenRouter lists transcription models ONLY under this modality filter (the
+  // plain /models list is chat LLMs). Present there => transcription route.
+  const url = `${apiBase()}/models?output_modalities=transcription`;
+  const resp = await fetch(url, { headers: { Authorization: `Bearer ${config.apiKey}` } });
+  if (!resp.ok) throw new Error(`models API ${resp.status}`);
+  const data = await resp.json();
+  const ids = (data.data || []).map((m) => m.id);
+  return ids.includes(model) ? "transcription" : "llm";
+}
+
+async function resolveModelKind(model) {
+  if (modelKindMem.has(model)) return modelKindMem.get(model);
+  if (modelKindInflight.has(model)) return modelKindInflight.get(model);
+  const p = (async () => {
+    // 1. disk cache
+    try {
+      const cache = await invoke("read_model_kinds");
+      if (cache && cache[model]) {
+        modelKindMem.set(model, cache[model]);
+        return cache[model];
+      }
+    } catch (e) {
+      log("model-kind cache read failed:", String(e));
+    }
+    // 2. probe + persist. On failure assume "llm" (current, safe path) and do
+    //    NOT cache it, so a transient network error retries next time.
+    let kind;
+    try {
+      kind = await detectModelKind(model);
+    } catch (e) {
+      log(`model-kind detect failed for ${model}, assuming llm: ${String(e)}`);
+      return "llm";
+    }
+    modelKindMem.set(model, kind);
+    invoke("write_model_kind", { model, kind })
+      .then(() => log(`model-kind: ${model} -> ${kind} (cached)`))
+      .catch((e) => log("model-kind cache write failed:", String(e)));
+    return kind;
+  })();
+  modelKindInflight.set(model, p);
+  try {
+    return await p;
+  } finally {
+    modelKindInflight.delete(model);
+  }
+}
+
+// Dispatch to the route matching config.model's (cached) kind.
 async function postTranscription(base64) {
+  const kind = await resolveModelKind(config.model);
+  return kind === "transcription" ? postTranscribe(base64) : postChat(base64);
+}
+
+// LLM route (chat/completions): reshka JSON-envelope prompt. See postTranscription
+// history — this is the original, unchanged path.
+async function postChat(base64) {
   const resp = await fetch(config.endpoint, {
     method: "POST",
     headers: {
@@ -479,6 +550,25 @@ async function postTranscription(base64) {
   const data = await resp.json();
   const raw = data.choices?.[0]?.message?.content ?? data.content?.[0]?.text ?? "";
   return parseTranscription(raw);
+}
+
+// Transcription route (/audio/transcriptions): plain-text {text} response, no
+// system prompt, no JSON envelope. config_instructions are inactive here by design.
+async function postTranscribe(base64) {
+  const resp = await fetch(`${apiBase()}/audio/transcriptions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: config.model,
+      input_audio: { data: base64, format: "wav" },
+    }),
+  });
+  if (!resp.ok) throw new Error(`API ${resp.status} ${resp.statusText}`);
+  const data = await resp.json();
+  return String(data.text ?? "").trim();
 }
 
 // Port of reshka's _parse_json (reshka_tui.py:747-755). The model returns the JSON

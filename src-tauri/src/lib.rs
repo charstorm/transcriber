@@ -15,6 +15,40 @@ fn dump_wav(filename: String, b64: String) -> Result<String, String> {
     Ok(dir.to_string_lossy().to_string())
 }
 
+// ── persistent model-kind cache at ~/.cache/transcriber/model-kind.json ──────
+// Maps a model name -> "transcription" | "llm" so we only probe OpenRouter's
+// models API the first time a given model is used. Regenerable, hence cache_dir.
+fn model_kind_path() -> Option<std::path::PathBuf> {
+    let mut dir = dirs::cache_dir()?;
+    dir.push("transcriber");
+    std::fs::create_dir_all(&dir).ok()?;
+    dir.push("model-kind.json");
+    Some(dir)
+}
+
+#[tauri::command]
+fn read_model_kinds() -> serde_json::Value {
+    let empty = serde_json::json!({});
+    let Some(path) = model_kind_path() else { return empty };
+    match std::fs::read_to_string(&path) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or(empty),
+        Err(_) => empty, // missing file is normal on first run
+    }
+}
+
+#[tauri::command]
+fn write_model_kind(model: String, kind: String) -> Result<(), String> {
+    let path = model_kind_path().ok_or("no cache dir")?;
+    let mut map = match read_model_kinds() {
+        serde_json::Value::Object(m) => m,
+        _ => serde_json::Map::new(),
+    };
+    map.insert(model, serde_json::Value::String(kind));
+    let out = serde_json::to_string_pretty(&map).map_err(|e| e.to_string())?;
+    std::fs::write(&path, out).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ── persistent session log at ~/.cache/transcriber/transcriber.log ───────────
 fn log_file_path() -> Option<std::path::PathBuf> {
     let mut dir = dirs::cache_dir()?;
@@ -317,6 +351,8 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
             dump_wav,
+            read_model_kinds,
+            write_model_kind,
             log_init,
             log_append,
             load_config,
