@@ -1,5 +1,5 @@
-// TEMP (see tmp/next.md): write an utterance to ~/.cache/transcriber/dumps/ for
-// manual audio-quality inspection. Throwaway — fold into proper logging.
+// Write an utterance to ~/.cache/transcriber/audio_dumps/ for audio-quality
+// inspection and debugging.
 //
 // The caller always hands us the exact WAV (16kHz mono PCM16) it sends to the
 // API, plus the desired on-disk `format`. `wav` is written straight to disk
@@ -16,7 +16,7 @@ fn dump_audio(filename: String, b64: String, format: String) -> Result<String, S
     let wav = STANDARD.decode(b64.as_bytes()).map_err(|e| e.to_string())?;
     let mut dir = dirs::cache_dir().ok_or("no cache dir")?;
     dir.push("transcriber");
-    dir.push("dumps");
+    dir.push("audio_dumps");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     // strip any path separators from the caller-supplied name
     let safe = filename.replace(['/', '\\'], "_");

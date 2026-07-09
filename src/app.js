@@ -3,13 +3,13 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 
-// ── debug instrumentation ────────────────────────────────────────────────────
-// DUMP_AUDIO is throwaway (see tmp/next.md): dump each utterance for manual
-// audio-quality inspection. Logging is persistent — every pipeline event is
-// mirrored to ~/.cache/transcriber/transcriber.log (truncated each launch) so
-// dropped/empty transcriptions can be diagnosed after the fact.
+// ── audio dump ───────────────────────────────────────────────────────────────
+// DUMP_AUDIO writes every utterance to ~/.cache/transcriber/audio_dumps/ for
+// audio-quality inspection and debugging. Logging is persistent — every
+// pipeline event is mirrored to ~/.cache/transcriber/transcriber.log
+// (truncated each launch) so dropped/empty transcriptions can be diagnosed
+// after the fact.
 const DUMP_AUDIO = true;
-let dumpSeq = 0;
 // On-disk dump format (config `dump_audio_format`). `wav` is written straight to
 // disk (no external tools); every other format is transcoded by ffmpeg in Rust
 // and needs ffmpeg installed — if it's missing, the dump is skipped with a
@@ -96,8 +96,8 @@ const DEFAULTS = {
   maxRetries: 1,
   // config_instructions appended to the system prompt (see buildSystemPrompt).
   configInstructions: [],
-  // on-disk format for the throwaway audio dumps. See DUMP_FORMATS. `wav` needs
-  // no external tools; anything else is transcoded by ffmpeg in Rust.
+  // on-disk format for audio dumps. See DUMP_FORMATS. `wav` needs no external
+  // tools; anything else is transcoded by ffmpeg in Rust.
   dumpAudioFormat: "opus",
 };
 
@@ -753,14 +753,17 @@ async function transcribeAudio(float32, seq) {
   }
   const base64 = float32ToWavBase64(float32, 16000);
 
-  // TEMP: dump the utterance for manual inspection (see tmp/next.md). We always
-  // send WAV to the API; the dump is written in config.dumpAudioFormat (wav is
-  // free, anything else is transcoded by ffmpeg in Rust). If ffmpeg is missing
-  // for a non-wav format the dump is skipped and Rust returns a clear error.
+  // Dump the utterance for audio-quality inspection. We always send WAV to the
+  // API; the dump is written in config.dumpAudioFormat (wav is free, anything
+  // else is transcoded by ffmpeg in Rust). If ffmpeg is missing for a non-wav
+  // format the dump is skipped and Rust returns a clear error. Filenames use a
+  // UTC timestamp (ms precision) so they sort chronologically and survive
+  // restarts without colliding.
   if (DUMP_AUDIO) {
     const ms = Math.round((float32.length / 16000) * 1000);
     const fmt = config.dumpAudioFormat;
-    const name = `utterance-${String(++dumpSeq).padStart(3, "0")}-${ms}ms.${fmt}`;
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-"); // 2026-07-09T14-30-22-123Z
+    const name = `${stamp}-${ms}ms.${fmt}`;
     invoke("dump_audio", { filename: name, b64: base64, format: fmt })
       .then((path) => log("dumped audio →", path))
       .catch((e) => log("error while writing audio:", String(e)));
