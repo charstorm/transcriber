@@ -4,12 +4,17 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 
 // ── debug instrumentation ────────────────────────────────────────────────────
-// DUMP_AUDIO is throwaway (see tmp/next.md): dump each utterance WAV for manual
+// DUMP_AUDIO is throwaway (see tmp/next.md): dump each utterance for manual
 // audio-quality inspection. Logging is persistent — every pipeline event is
 // mirrored to ~/.cache/transcriber/transcriber.log (truncated each launch) so
 // dropped/empty transcriptions can be diagnosed after the fact.
 const DUMP_AUDIO = true;
 let dumpSeq = 0;
+// On-disk dump format (config `dump_audio_format`). `wav` is written straight to
+// disk (no external tools); every other format is transcoded by ffmpeg in Rust
+// and needs ffmpeg installed — if it's missing, the dump is skipped with a
+// warning. Default is opus (tiny for 16kHz mono voice).
+const DUMP_FORMATS = ["wav", "opus", "ogg", "mp3", "flac"];
 
 const ts = () => {
   const d = new Date();
@@ -91,6 +96,9 @@ const DEFAULTS = {
   maxRetries: 1,
   // config_instructions appended to the system prompt (see buildSystemPrompt).
   configInstructions: [],
+  // on-disk format for the throwaway audio dumps. See DUMP_FORMATS. `wav` needs
+  // no external tools; anything else is transcoded by ffmpeg in Rust.
+  dumpAudioFormat: "opus",
 };
 
 // Byte-identical copy of reshka's _DEFAULT_SYSTEM_PROMPT (reshka_tui.py:128-141).
@@ -283,6 +291,11 @@ async function loadFileConfig() {
   if (str(file.paste_key)) config.pasteKey = str(file.paste_key);
   if (num(file.paste_delay_ms) !== undefined) config.pasteDelayMs = Math.max(0, Math.round(num(file.paste_delay_ms)));
   if (str(file.enter_key)) config.enterKey = str(file.enter_key);
+  if (str(file.dump_audio_format)) {
+    const fmt = str(file.dump_audio_format).toLowerCase();
+    if (DUMP_FORMATS.includes(fmt)) config.dumpAudioFormat = fmt;
+    else log(`config.yaml: unknown dump_audio_format "${fmt}", keeping "${config.dumpAudioFormat}" (supported: ${DUMP_FORMATS.join(", ")})`);
+  }
 
   // Voice commands: an explicit list in the file REPLACES the built-in defaults
   // (the file is the source of truth). Each entry needs at least an action and a
@@ -333,6 +346,7 @@ async function loadFileConfig() {
     model: config.model, maxRetries: config.maxRetries,
     autoPaste: config.autoPaste, pasteKey: config.pasteKey, pasteDelayMs: config.pasteDelayMs,
     enterKey: config.enterKey, commands: config.commands.map((c) => c.emit || c.say),
+    dumpAudioFormat: config.dumpAudioFormat,
     vad: vadParams, configInstructions: config.configInstructions.length,
   }));
 }
@@ -739,13 +753,17 @@ async function transcribeAudio(float32, seq) {
   }
   const base64 = float32ToWavBase64(float32, 16000);
 
-  // TEMP: dump the exact WAV being sent, for manual inspection (see tmp/next.md)
+  // TEMP: dump the utterance for manual inspection (see tmp/next.md). We always
+  // send WAV to the API; the dump is written in config.dumpAudioFormat (wav is
+  // free, anything else is transcoded by ffmpeg in Rust). If ffmpeg is missing
+  // for a non-wav format the dump is skipped and Rust returns a clear error.
   if (DUMP_AUDIO) {
     const ms = Math.round((float32.length / 16000) * 1000);
-    const name = `utterance-${String(++dumpSeq).padStart(3, "0")}-${ms}ms.wav`;
-    invoke("dump_wav", { filename: name, b64: base64 })
+    const fmt = config.dumpAudioFormat;
+    const name = `utterance-${String(++dumpSeq).padStart(3, "0")}-${ms}ms.${fmt}`;
+    invoke("dump_audio", { filename: name, b64: base64, format: fmt })
       .then((path) => log("dumped audio →", path))
-      .catch((e) => log("audio dump failed:", e));
+      .catch((e) => log("error while writing audio:", String(e)));
   }
 
   activeApiCount++;

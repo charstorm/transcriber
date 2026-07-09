@@ -1,9 +1,19 @@
-// TEMP (see tmp/next.md): write an utterance WAV to ~/.cache/transcriber/dumps/
-// for manual audio-quality inspection. Throwaway — fold into proper logging.
+// TEMP (see tmp/next.md): write an utterance to ~/.cache/transcriber/dumps/ for
+// manual audio-quality inspection. Throwaway — fold into proper logging.
+//
+// The caller always hands us the exact WAV (16kHz mono PCM16) it sends to the
+// API, plus the desired on-disk `format`. `wav` is written straight to disk
+// (free, no external tools). Every other format is transcoded via ffmpeg to
+// keep dumps small — voice at 16kHz compresses ~10-20x vs raw PCM16. If ffmpeg
+// is not installed and a non-wav format is requested we DON'T dump; we return a
+// clear error so the caller can warn per-utterance.
 #[tauri::command]
-fn dump_wav(filename: String, b64: String) -> Result<String, String> {
+fn dump_audio(filename: String, b64: String, format: String) -> Result<String, String> {
     use base64::{engine::general_purpose::STANDARD, Engine};
-    let bytes = STANDARD.decode(b64.as_bytes()).map_err(|e| e.to_string())?;
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let wav = STANDARD.decode(b64.as_bytes()).map_err(|e| e.to_string())?;
     let mut dir = dirs::cache_dir().ok_or("no cache dir")?;
     dir.push("transcriber");
     dir.push("dumps");
@@ -11,8 +21,51 @@ fn dump_wav(filename: String, b64: String) -> Result<String, String> {
     // strip any path separators from the caller-supplied name
     let safe = filename.replace(['/', '\\'], "_");
     dir.push(safe);
-    std::fs::write(&dir, &bytes).map_err(|e| e.to_string())?;
-    Ok(dir.to_string_lossy().to_string())
+    let out = dir.to_string_lossy().to_string();
+
+    // WAV is free: the caller already gave us WAV bytes, so just write them.
+    if format.eq_ignore_ascii_case("wav") {
+        std::fs::write(&dir, &wav).map_err(|e| e.to_string())?;
+        return Ok(out);
+    }
+
+    // Everything else needs ffmpeg. Pick a codec per format; ffmpeg infers the
+    // container from the output extension.
+    let mut args: Vec<&str> = vec!["-hide_banner", "-loglevel", "error", "-y", "-f", "wav", "-i", "pipe:0"];
+    match format.to_ascii_lowercase().as_str() {
+        "opus" => args.extend(["-c:a", "libopus", "-b:a", "24k"]),
+        "ogg" => args.extend(["-c:a", "libvorbis", "-b:a", "32k"]),
+        "mp3" => args.extend(["-c:a", "libmp3lame", "-b:a", "32k"]),
+        "flac" => args.extend(["-c:a", "flac"]),
+        other => return Err(format!("unsupported dump format: {other}")),
+    }
+    args.push(&out);
+
+    // Spawn ffmpeg; a spawn error means it isn't installed / not on PATH.
+    let child = Command::new("ffmpeg")
+        .args(&args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|_| {
+            format!("ffmpeg not available — cannot dump {format} audio (install ffmpeg or set dump format to wav)")
+        })?;
+
+    let mut proc = child;
+    proc.stdin
+        .take()
+        .ok_or("no ffmpeg stdin")?
+        .write_all(&wav)
+        .map_err(|e| e.to_string())?;
+    let output = proc.wait_with_output().map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "ffmpeg failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(out)
 }
 
 // ── persistent model-kind cache at ~/.cache/transcriber/model-kind.json ──────
@@ -369,7 +422,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
-            dump_wav,
+            dump_audio,
             read_model_kinds,
             write_model_kind,
             log_init,

@@ -44,6 +44,15 @@ commands:
 # Key ydotool presses after the paste for paste_enter_clear (ydotool key name).
 enter_key: Enter
 
+# On-disk format for the debug audio dumps (~/.cache/transcriber/dumps/). These
+# are throwaway captures of each utterance for manual quality inspection.
+#   wav   raw PCM16 — large, but needs no external tools.
+#   opus  (default) tiny; great for 16kHz mono voice. Needs ffmpeg.
+#   ogg / mp3 / flac  also supported. All non-wav formats need ffmpeg installed.
+# If a non-wav format is set but ffmpeg is missing, dumps are skipped and a
+# warning is logged for each utterance.
+dump_audio_format: opus
+
 # Voice-activity-detection tuning. Timings are in milliseconds.
 vad:
   # Confidence (0–1) for a frame to START speech. Lower = more sensitive, so
