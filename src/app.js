@@ -417,8 +417,24 @@ async function copyTranscript() {
 }
 
 function clearTranscript() {
+  const n = transcriptEl.value.length;
   transcriptEl.value = "";
   localStorage.removeItem(TRANSCRIPT_KEY);
+  if (n) log(`transcript cleared (${n} chars) — persisted copy wiped`);
+}
+
+// Crash recovery: reload whatever transcript is still persisted in localStorage.
+// Storage is only wiped on an explicit clear or after a successful paste/copy,
+// so anything found here belonged to a session that died before delivering it.
+function restoreTranscript() {
+  const saved = localStorage.getItem(TRANSCRIPT_KEY) || "";
+  if (!saved.trim()) {
+    log("restore: no persisted transcript — starting empty");
+    return;
+  }
+  transcriptEl.value = saved;
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  log(`restore: recovered ${saved.length} chars from previous session`);
 }
 
 // ── voice commands ───────────────────────────────────────────────────────────
@@ -951,18 +967,32 @@ async function pasteTranscript() {
       log("done: paste_transcript invoked ok");
       // brief beat so the detached ydotool is fully spawned before we move on
       await sleep(150);
+      clearTranscript(); // delivered — safe to drop the persisted copy
     } catch (err) {
       console.error("auto-paste failed:", err);
       log("auto-paste failed:", String(err));
       // don't lose the text — fall back to the clipboard
-      try { await copyTranscript(); } catch {}
+      try {
+        if (await copyTranscript()) {
+          log("done: fallback clipboard copy ok — transcript consumed");
+          clearTranscript();
+        }
+      } catch (e) {
+        log("done: fallback copy failed too — keeping transcript persisted:", String(e));
+      }
     }
   } else if (text && config.autoCopy) {
     try {
-      await copyTranscript();
+      if (await copyTranscript()) {
+        log("done: auto-copy ok — transcript consumed");
+        clearTranscript();
+      }
     } catch (err) {
       console.error("auto-copy failed:", err);
+      log("done: auto-copy failed — keeping transcript persisted:", String(err));
     }
+  } else if (text) {
+    log("done: no paste/copy configured — transcript kept persisted");
   }
 }
 
@@ -988,7 +1018,11 @@ async function quitApp() {
 // start recording, matching the "pop up ready to dictate" model.
 async function onWake() {
   log("wake: re-trigger");
-  clearTranscript();
+  // No blanket clear here anymore: the canvas was already cleared when the last
+  // session's text was successfully pasted/copied. Anything still on it failed
+  // delivery, so keep it rather than destroy it.
+  if (transcriptEl.value.trim())
+    log(`wake: ${transcriptEl.value.length} undelivered chars retained on canvas`);
   resetSession();
   resetViz();
   if (!hasApiKey()) {
@@ -1125,7 +1159,7 @@ async function init() {
   log("auto-paste:", pasteAvailable ? "available" : `unavailable — ${pasteMessage}`);
   if (config.autoPaste && !pasteAvailable) showPasteWarning(pasteMessage);
 
-  clearTranscript(); // always start from an empty transcript on launch
+  restoreTranscript(); // crash recovery: reload any undelivered transcript
   wire();
   // wake on a second launch (resident single-instance — see Rust callback)
   getCurrentWindow().listen("wake", onWake).catch((e) => log("wake listen failed:", String(e)));
