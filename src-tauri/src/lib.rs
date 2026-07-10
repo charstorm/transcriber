@@ -111,10 +111,29 @@ fn log_file_path() -> Option<std::path::PathBuf> {
     Some(dir)
 }
 
-// truncate the log at the start of each session (start fresh, never append)
+// Marker dropped by the web-process revive handler. Its presence tells the next
+// log_init that this "session start" is really a reload after a renderer crash,
+// so the log must NOT be truncated — the pre-crash lines are the evidence.
+fn revive_marker_path() -> Option<std::path::PathBuf> {
+    let mut dir = dirs::cache_dir()?;
+    dir.push("transcriber");
+    dir.push("revive.marker");
+    Some(dir)
+}
+
+// truncate the log at the start of each session (start fresh, never append) —
+// UNLESS this init follows a webview revive, in which case keep the log and
+// just append a divider so the crash context stays readable.
 #[tauri::command]
 fn log_init() -> Result<String, String> {
     let path = log_file_path().ok_or("no cache dir")?;
+    if let Some(marker) = revive_marker_path() {
+        if marker.exists() {
+            let _ = std::fs::remove_file(&marker);
+            append_log("=== webview revived after web-process crash — log NOT truncated ===");
+            return Ok(path.to_string_lossy().to_string());
+        }
+    }
     std::fs::write(&path, b"").map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().to_string())
 }
@@ -444,6 +463,24 @@ pub fn run() {
                         webview.inner().connect_permission_request(|_wv, req| {
                             req.allow();
                             true
+                        });
+                        // Auto-revive: WebKitWebProcess can be killed from under
+                        // us (observed: libgstpipewire.so segfaults inside the
+                        // web process when the USB mic is unplugged mid-capture).
+                        // The shell survives with a dead, frozen webview — so
+                        // catch the termination and reload, which respawns the
+                        // web process. The frontend then restores the persisted
+                        // transcript from localStorage on its own.
+                        webview.inner().connect_web_process_terminated(|wv, reason| {
+                            append_log(&format!(
+                                "[revive] web process terminated ({reason:?}) — reloading webview"
+                            ));
+                            // tell the reloaded frontend's log_init to append,
+                            // not truncate, so the crash context is preserved
+                            if let Some(marker) = revive_marker_path() {
+                                let _ = std::fs::write(&marker, format!("{reason:?}"));
+                            }
+                            wv.reload();
                         });
                     });
                 }
