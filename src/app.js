@@ -914,6 +914,52 @@ function releaseMic() {
   try { vadInstance.audioContext.suspend(); } catch (err) { log("releaseMic suspend failed:", String(err)); }
 }
 
+// ── mic device watch ──────────────────────────────────────────────────────────
+// Follow the system default mic across hot-plugs. Without this, yanking the USB
+// mic drops capture to the laptop mic and STAYS there after the USB returns.
+// On any change to the set of audio inputs while recording, warm-swap the mic:
+// a fresh getUserMedia re-resolves the system default, which WirePlumber hands
+// back to the (higher-priority) USB device once it reappears.
+let knownMicIds = null;
+let deviceSwapTimer = null;
+
+async function audioInputIds() {
+  const devs = await navigator.mediaDevices.enumerateDevices();
+  return new Set(devs.filter((d) => d.kind === "audioinput").map((d) => d.deviceId));
+}
+
+function currentMicLabel() {
+  try {
+    return vadInstance?.stream?.getAudioTracks()[0]?.label || "(none)";
+  } catch {
+    return "(none)";
+  }
+}
+
+function onDeviceChange() {
+  // a replug fires several devicechange events in a burst — settle first
+  clearTimeout(deviceSwapTimer);
+  deviceSwapTimer = setTimeout(async () => {
+    try {
+      const ids = await audioInputIds();
+      const before = knownMicIds;
+      knownMicIds = ids;
+      if (!before) return; // first sighting, nothing to compare against
+      const changed = ids.size !== before.size || [...ids].some((id) => !before.has(id));
+      if (!changed) return log("devicechange: audio inputs unchanged — ignoring");
+      if (!isRecording)
+        return log(`devicechange: audio inputs ${before.size} → ${ids.size}, not recording — ignoring`);
+      const oldLabel = currentMicLabel();
+      log(`devicechange: audio inputs ${before.size} → ${ids.size} — re-acquiring default mic (was: ${oldLabel})`);
+      releaseMic();
+      await acquireMic();
+      log(`devicechange: now listening on: ${currentMicLabel()}`);
+    } catch (err) {
+      log("devicechange: mic swap failed:", String(err));
+    }
+  }, 600);
+}
+
 // ── recording control ────────────────────────────────────────────────────────
 async function startRecording() {
   if (isRecording) return;
@@ -1117,6 +1163,14 @@ function wire() {
     localStorage.setItem(TRANSCRIPT_KEY, transcriptEl.value)
   );
   document.addEventListener("keydown", handleKeydown);
+  // follow the system default mic across USB hot-plugs (see mic device watch)
+  navigator.mediaDevices.addEventListener("devicechange", onDeviceChange);
+  audioInputIds()
+    .then((ids) => {
+      knownMicIds = ids;
+      log(`devicechange: baseline ${ids.size} audio input(s)`);
+    })
+    .catch((e) => log("devicechange: baseline enumerate failed:", String(e)));
 
   // Make the window draggable by its titlebar. data-tauri-drag-region is
   // unreliable on Wayland/WebKitGTK, so drive startDragging() explicitly.
