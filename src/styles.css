@@ -251,14 +251,16 @@ body {
 }
 
 /* ── transcript view (controls BELOW the transcript) ──────────── */
-/* outer frame: 10px gap on every side between this border and .ta-wrap,
-   giving the transcript panel a distinct outer boundary. */
+/* outer frame: 30px gap on every side between this border and .ta-wrap,
+   giving the transcript panel a distinct outer boundary. The gap is where
+   .ta-frame-deco's notches dip inward — .ta-wrap's own border is never
+   touched by the decoration. */
 .ta-frame {
-  position: relative; /* anchors the ::before segmented frame */
+  position: relative; /* anchors the absolutely-positioned .ta-frame-deco */
   flex: 1;
   min-height: 0;
   display: flex;
-  padding: 16px;
+  padding: 30px;
   background: #000;
 }
 
@@ -284,46 +286,26 @@ body {
   box-shadow: inset 0 4px 26px rgba(0, 0, 0, 0.55);
 }
 
-/* segmented HUD frame: solid corners, a gap cut in the MIDDLE of each side.
-   A full-perimeter border ring, then masked so the centre span of every edge
-   is erased (leaving four corner brackets). Dimmed 20% off full accent — no
-   audio-reactive flicker (was pulsing brightness with live energy). */
-.ta-frame::before {
-  content: "";
+/* notched outer frame: one continuous border, sharp full corners, each side
+   dipping inward to a shorter middle span via diagonal ramps. Path is
+   rebuilt in JS (initFrameDeco in app.js) on every resize using the frame's
+   actual pixel box — not viewBox scaling — so the stroke stays crisp and the
+   notch proportions hold at any window size. */
+.ta-frame-deco {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  border: 1px solid color-mix(in srgb, var(--accent) 80%, transparent);
-  /* two masks intersected: a vertical gap (erases top/bottom middles) and a
-     horizontal gap (erases left/right middles). --arm is a FIXED px length
-     (not %) so the corner brackets are the same length on every edge
-     regardless of the panel's width/height ratio. */
-  --arm: 46px;
-  -webkit-mask:
-    linear-gradient(90deg, #000 0 var(--arm), transparent var(--arm) calc(100% - var(--arm)), #000 calc(100% - var(--arm)) 100%),
-    linear-gradient(180deg, #000 0 var(--arm), transparent var(--arm) calc(100% - var(--arm)), #000 calc(100% - var(--arm)) 100%);
-  -webkit-mask-composite: source-in;
-  mask:
-    linear-gradient(90deg, #000 0 var(--arm), transparent var(--arm) calc(100% - var(--arm)), #000 calc(100% - var(--arm)) 100%),
-    linear-gradient(180deg, #000 0 var(--arm), transparent var(--arm) calc(100% - var(--arm)), #000 calc(100% - var(--arm)) 100%);
-  mask-composite: intersect;
+  overflow: visible;
 }
-
-/* mid-edge tick marks: a dash centered on each of the four edges, matching
-   the corner brackets' color/thickness so they read as part of the same
-   frame rather than a dimmer accent. */
-.ta-frame::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  --tick-len: 88px;
-  --tick-color: color-mix(in srgb, var(--accent) 80%, transparent);
-  background:
-    linear-gradient(var(--tick-color), var(--tick-color)) top center / var(--tick-len) 1px no-repeat,
-    linear-gradient(var(--tick-color), var(--tick-color)) bottom center / var(--tick-len) 1px no-repeat,
-    linear-gradient(var(--tick-color), var(--tick-color)) left center / 1px var(--tick-len) no-repeat,
-    linear-gradient(var(--tick-color), var(--tick-color)) right center / 1px var(--tick-len) no-repeat;
+.ta-frame-deco .ta-frame-line {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 45%, transparent);
+  stroke-width: 1.5px;
+}
+/* top/bottom notch trapezoids, filled with a soft accent wash */
+.ta-frame-deco .ta-frame-fill {
+  fill: color-mix(in srgb, var(--accent) 28%, transparent);
+  stroke: none;
 }
 
 #transcript {
