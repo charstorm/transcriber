@@ -36,6 +36,10 @@
   --muted: color-mix(in srgb, var(--body) 72%, var(--bg));
   --muted2: color-mix(in srgb, var(--body) 50%, var(--bg));
 
+  /* the solid window surface tone — see the body rule; hoisted here so the
+     transcript frame decoration can match the surround exactly. */
+  --window: color-mix(in srgb, hsl(from var(--bg) h calc(s * 1.7) l) 92%, var(--accent));
+
   --glow: color-mix(in srgb, var(--accent) 22%, transparent);
   --accent-soft: color-mix(in srgb, var(--accent) 26%, transparent);
   --accent-line: color-mix(in srgb, var(--accent) 50%, transparent);
@@ -85,7 +89,7 @@ html {
 /* body IS the window surface (solid). flat, saturated navy-cyan — no
    gradient — outer frame only, the transcript panel stays untouched. */
 body {
-  background: color-mix(in srgb, hsl(from var(--bg) h calc(s * 1.7) l) 92%, var(--accent));
+  background: var(--window);
   border: 1px solid var(--border);
   /* square corners: GNOME/Wayland draws a rectangular window shadow that can't
      be disabled on Linux, so rounded corners leave a visible square overlay.
@@ -297,14 +301,15 @@ body {
   pointer-events: none;
   overflow: visible;
 }
+/* border + notch fill both use the window surface tone, so the notched
+   top/bottom read as the surrounding window bleeding into the black frame. */
 .ta-frame-deco .ta-frame-line {
   fill: none;
-  stroke: color-mix(in srgb, var(--accent) 45%, transparent);
+  stroke: var(--window);
   stroke-width: 1.5px;
 }
-/* top/bottom notch trapezoids, filled with a soft accent wash */
 .ta-frame-deco .ta-frame-fill {
-  fill: color-mix(in srgb, var(--accent) 28%, transparent);
+  fill: var(--window);
   stroke: none;
 }
 
