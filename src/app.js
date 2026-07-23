@@ -267,83 +267,6 @@ function applyTheme(theme) {
   if (Object.keys(applied).length) log("theme applied:", JSON.stringify(applied));
 }
 
-// ── transcript outer-frame decoration ──────────────────────────
-// Single notched border: sharp full corners, each side dips inward to a
-// shorter middle span via diagonal ramps. Lives entirely in .ta-frame's
-// padding gap outside .ta-wrap — .ta-wrap's own plain border is never
-// touched. depth/arm/ramp are all fixed px values so the notch geometry is
-// identical on every side regardless of panel width/height or aspect ratio.
-const FRAME_DECO = { depth: 16, arm: 100, ramp: 32, minMid: 24 };
-
-function buildFrameDecoPath(w, h) {
-  const { depth, arm, ramp, minMid } = FRAME_DECO;
-
-  // ax,ay -> bx,by is one side of the rect; nx,ny is the inward unit normal.
-  // arm (sharp corner run) and ramp (diagonal run) are FIXED px lengths, so the
-  // ramp slope = depth/ramp is the same on all four sides — it does NOT depend
-  // on w/h. If a side is too short to fit both plus a minMid middle span, arm,
-  // ramp AND depth scale down together by the same factor, preserving slope.
-  function notch(ax, ay, bx, by, nx, ny) {
-    const vx = bx - ax, vy = by - ay;
-    const L = Math.hypot(vx, vy);
-    const ux = vx / L, uy = vy / L;
-    let a = arm, r = ramp, d = depth;
-    const budget = (L - minMid) / 2;
-    if (a + r > budget) {
-      const k = Math.max(0, budget) / (a + r);
-      a *= k; r *= k; d *= k;
-    }
-    const at = (dist) => [ax + ux * dist, ay + uy * dist];
-    const [x1, y1] = at(a);
-    const [x2, y2] = at(a + r);
-    const [x3, y3] = at(L - a - r);
-    const [x4, y4] = at(L - a);
-    return [
-      [x1, y1],
-      [x2 + nx * d, y2 + ny * d],
-      [x3 + nx * d, y3 + ny * d],
-      [x4, y4],
-    ];
-  }
-
-  // only the top and bottom edges are notched; the left and right edges run
-  // straight from corner to corner.
-  const TL = [0, 0], TR = [w, 0], BR = [w, h], BL = [0, h];
-  const top = notch(...TL, ...TR, 0, 1);
-  const bot = notch(...BR, ...BL, 0, -1);
-  const poly = (arr) => "M " + arr.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(" L ") + " Z";
-
-  // border: one continuous outline (stroked). fill: the two notch trapezoids
-  // — notch() already returns the four corners of each dip, so closing those
-  // points gives exactly the parallelogram-ish shape to fill.
-  return {
-    border: poly([TL, ...top, TR, BR, ...bot, BL]),
-    fill: `${poly(top)} ${poly(bot)}`,
-  };
-}
-
-// Rebuilds the path on every resize (ResizeObserver, not a window "resize"
-// listener — catches flex-layout-driven size changes too) using the frame's
-// live pixel box, so it stays correct across arbitrary window sizes.
-function initFrameDeco() {
-  const frame = document.querySelector(".ta-frame");
-  const svg = frame?.querySelector(".ta-frame-deco");
-  const line = svg?.querySelector(".ta-frame-line");
-  const fill = svg?.querySelector(".ta-frame-fill");
-  if (!frame || !svg || !line || !fill) return;
-
-  const redraw = () => {
-    const { width, height } = frame.getBoundingClientRect();
-    if (!width || !height) return;
-    const d = buildFrameDecoPath(width, height);
-    line.setAttribute("d", d.border);
-    fill.setAttribute("d", d.fill);
-  };
-
-  new ResizeObserver(redraw).observe(frame);
-  redraw();
-}
-
 // Merge ~/.config/transcriber/config.yaml (parsed by Rust) over the in-app
 // defaults. A missing file or missing keys leave the defaults untouched. The
 // file is the source of truth for model/endpoint/key and VAD tuning.
@@ -1292,7 +1215,6 @@ async function init() {
 
   restoreTranscript(); // crash recovery: reload any undelivered transcript
   wire();
-  initFrameDeco();
   // wake on a second launch (resident single-instance — see Rust callback)
   getCurrentWindow().listen("wake", onWake).catch((e) => log("wake listen failed:", String(e)));
   resetViz();

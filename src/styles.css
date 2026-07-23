@@ -217,6 +217,13 @@ body {
   display: none;
 }
 
+/* transcript view runs tighter than the config/shortcuts views — every px of
+   gutter is real estate the narrow side-docked layout can't spare. */
+#viewTranscript {
+  padding: 6px 6px 8px;
+  gap: 8px;
+}
+
 .view h2 {
   margin: 2px 0 4px;
   font-size: 14px;
@@ -258,24 +265,11 @@ body {
 }
 
 /* ── transcript view (controls BELOW the transcript) ──────────── */
-/* outer frame: 30px gap on every side between this border and .ta-wrap,
-   giving the transcript panel a distinct outer boundary. The gap is where
-   .ta-frame-deco's notches dip inward — .ta-wrap's own border is never
-   touched by the decoration. */
-.ta-frame {
-  position: relative; /* anchors the absolutely-positioned .ta-frame-deco */
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  padding: 30px;
-  background: #000;
-}
-
 .ta-wrap {
   flex: 1;
   min-height: 0;
   display: flex;
-  padding: 14px 16px;
+  padding: 7px 8px;
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   /* flat near-black panel, no gradient sweep — a very faint radial glow
      anchored top-left (so it doesn't read as flat-dead-black), plus a faint
@@ -288,35 +282,9 @@ body {
     linear-gradient(to bottom, color-mix(in srgb, var(--accent) 11%, transparent) 1px, transparent 1px);
   background-size: 100% 100%, 16px 16px, 16px 16px;
   background-color: #04070d;
-  /* outer cyan glow lifts the box off the hard-black frame, plus a static inner
-     shadow for depth — no audio-reactive glow (was flickering with every frame
-     of live energy; caused eyestrain). */
-  box-shadow:
-    0 0 30px color-mix(in srgb, var(--accent) 20%, transparent),
-    inset 0 4px 26px rgba(0, 0, 0, 0.55);
-}
-
-/* notched outer frame: one continuous border, sharp full corners, each side
-   dipping inward to a shorter middle span via diagonal ramps. Path is
-   rebuilt in JS (initFrameDeco in app.js) on every resize using the frame's
-   actual pixel box — not viewBox scaling — so the stroke stays crisp and the
-   notch proportions hold at any window size. */
-.ta-frame-deco {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  overflow: visible;
-}
-/* border + notch fill both use the window surface tone, so the notched
-   top/bottom read as the surrounding window bleeding into the black frame. */
-.ta-frame-deco .ta-frame-line {
-  fill: none;
-  stroke: var(--window);
-  stroke-width: 1.5px;
-}
-.ta-frame-deco .ta-frame-fill {
-  fill: var(--window);
-  stroke: none;
+  /* static inner shadow for depth — no audio-reactive glow (was flickering
+     with every frame of live energy; caused eyestrain). */
+  box-shadow: inset 0 4px 26px rgba(0, 0, 0, 0.55);
 }
 
 #transcript {

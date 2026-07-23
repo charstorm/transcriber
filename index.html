@@ -16,6 +16,12 @@
         <span class="brand-name">transcriber</span>
       </div>
       <div class="titlebar-actions">
+        <button class="icon-btn" id="btnCopy" title="Copy (Ctrl+C)" aria-label="Copy transcript">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <button class="icon-btn" id="btnClear" title="Clear (Ctrl+L)" aria-label="Clear transcript">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14"/><path d="M10 11v6M14 11v6"/></svg>
+        </button>
         <button class="icon-btn" id="btnConfig" title="Configuration" aria-label="Configuration">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
@@ -32,11 +38,8 @@
     <section class="view" id="viewTranscript">
       <div class="api-warn hidden" id="apiWarn"></div>
       <div class="paste-warn hidden" id="pasteWarn"></div>
-      <div class="ta-frame">
-        <svg class="ta-frame-deco" aria-hidden="true"><path class="ta-frame-fill"/><path class="ta-frame-line"/></svg>
-        <div class="ta-wrap">
-          <textarea id="transcript" spellcheck="false" placeholder="Transcription will appear here…"></textarea>
-        </div>
+      <div class="ta-wrap">
+        <textarea id="transcript" spellcheck="false" placeholder="Transcription will appear here…"></textarea>
       </div>
       <div class="transcript-toolbar">
         <button class="pill" id="btnToggleRec">
@@ -51,8 +54,6 @@
         <span class="stat" id="statDone" title="Transcriptions completed">
           <b class="num" id="numDone">0</b><span class="lbl">done</span>
         </span>
-        <button class="mini-btn" id="btnCopy" title="Copy (Ctrl+C)">Copy</button>
-        <button class="mini-btn" id="btnClear" title="Clear (Ctrl+L)">Clear</button>
       </div>
     </section>
 
