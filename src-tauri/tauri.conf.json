@@ -16,7 +16,7 @@
         "title": "transcriber",
         "width": 1080,
         "height": 482,
-        "minWidth": 570,
+        "minWidth": 285,
         "minHeight": 350,
         "center": true,
         "decorations": false,
