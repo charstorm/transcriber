@@ -41,11 +41,16 @@ paste_delay_ms: 800
 #   rephrase = rewrite the transcript into cleaner, better-structured notes in
 #           the second tab, then switch to it. Say it again after dictating
 #           more and it improves that draft rather than starting over.
+#           Anything said just before this trigger is read as an instruction to
+#           the rewriter, not as dictation — "cut this down by half, rephrase
+#           input". It steers that one pass and is kept out of the transcript.
 commands:
   - action: paste_enter_clear
     say: strike and reload
   - action: rephrase
     say: rephrase input
+  - action: rephrase
+    say: rephrase the input
 # Key ydotool presses after the paste for paste_enter_clear (ydotool key name).
 enter_key: Enter
 
