@@ -38,8 +38,21 @@
     <section class="view" id="viewTranscript">
       <div class="api-warn hidden" id="apiWarn"></div>
       <div class="paste-warn hidden" id="pasteWarn"></div>
-      <div class="ta-wrap">
+      <!-- Pane tabs. Transcription always appends to the transcript pane, whichever
+           tab is showing — the tab is a view, not a mode. -->
+      <div class="tabbar" role="tablist">
+        <button class="tab active" id="tabTranscript" role="tab">
+          Transcript<span class="tab-flag hidden" id="tabTranscriptFlag">new</span>
+        </button>
+        <button class="tab" id="tabRephrased" role="tab">
+          Rephrased<span class="tab-flag hidden" id="tabRephrasedFlag">stale</span>
+        </button>
+      </div>
+      <div class="ta-wrap" id="wrapTranscript">
         <textarea id="transcript" spellcheck="false" placeholder="Transcription will appear here…"></textarea>
+      </div>
+      <div class="ta-wrap pane-hidden" id="wrapRephrased">
+        <textarea id="rephrased" spellcheck="false" placeholder="Say “rephrase input” to restructure the transcript here…"></textarea>
       </div>
       <div class="transcript-toolbar">
         <button class="pill" id="btnToggleRec">
@@ -77,6 +90,9 @@
       </label>
       <label class="check">
         <input type="checkbox" id="cfgAutoPaste" /> Auto-paste transcript into focused app on close
+      </label>
+      <label>Rephrase model
+        <input type="text" id="cfgRephraseModel" placeholder="google/gemini-3.1-flash-lite" />
       </label>
       <div class="form-actions">
         <button class="mini-btn" id="btnConfigBack">Back</button>
