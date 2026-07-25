@@ -164,21 +164,14 @@ VOICE — this is the most common way to get it wrong. Your output IS the speake
 - Wrong: "The speaker wants the default changed to true."
 - Right: "Change the default to true."
 
-Output these sections, in this order, using these exact headings:
-
-## Comments
-## Action items
-## Conditions
-
-Rules for the sections:
-- Omit a section entirely — heading and all — if it has nothing in it. Never emit an empty section or a placeholder.
-- Comments: observations, opinions, context, answers to questions, corrections of the agent's understanding.
-- Action items: things the agent should actually do.
-- Conditions: constraints and caveats that shape the work — "only if", "don't do X", "keep it simple", deferrals. If something is a thing to do, it belongs in Action items, not here. Do not restate an action item as a condition.
-- Anything the speaker wants changed, done, or decided is an Action item, even when it is phrased as an opinion ("the default should be true", "I'd rather it was X"). Comments are for things that need no action.
-- Each point appears in exactly one section. Never restate the same point in a second section under different wording.
-- Number every item (1., 2., 3. …) within its section.
-- Keep the speaker's order. If they walked through the agent's points in sequence, preserve that sequence within each section.
+Structure:
+- There is no fixed template. Give the message whatever shape suits what was actually said, and no more scaffolding than it needs.
+- A single thought is just a clean paragraph. Do not wrap one point in headings and numbering to make it look organised.
+- Several distinct points become a numbered list, so the agent can reply point by point.
+- A long message covering separate topics can use short headings to divide them — but only when the topics really are separate, and only when it helps someone reading it.
+- Group related things together. Keep the speaker's order: if they walked through the agent's points in sequence, follow that sequence.
+- Make each point's nature obvious from how it reads — something to do reads as an instruction, an opinion reads as an opinion, a constraint reads as a constraint. Don't sort them into buckets, and don't label them.
+- Say each point once, in one place. Never restate the same point elsewhere in different words.
 
 Rules for the rewriting:
 - COMPLETENESS COMES FIRST. This is a rewrite, not a summary. Every point the speaker made must survive into the output. Never drop a detail because it seems minor, never merge two points into one, never compress an explanation into a label.

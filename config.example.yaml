@@ -38,10 +38,9 @@ paste_delay_ms: 800
 #
 # Providing this key REPLACES the built-in default (strike and reload). Omit it
 # to keep the default. Add multiple entries to map several phrases to an action.
-#   rephrase = rewrite the transcript into structured notes (Comments / Action
-#           items / Conditions) in the second tab, then switch to it. Say it
-#           again after dictating more and it improves that draft rather than
-#           starting over.
+#   rephrase = rewrite the transcript into cleaner, better-structured notes in
+#           the second tab, then switch to it. Say it again after dictating
+#           more and it improves that draft rather than starting over.
 commands:
   - action: paste_enter_clear
     say: strike and reload
