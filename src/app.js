@@ -102,6 +102,11 @@ const DEFAULTS = {
     // mandatory separator, so "rephrase input" cannot also match "rephrase the
     // input". Whichever way it comes out of the ASR, one of these fires.
     { action: "rephrase", say: "rephrase the input" },
+    // Wipes whichever pane is active (transcript or rephrased) so you can
+    // restart it — e.g. retry a rephrase you don't like without losing the
+    // dictation it was built from.
+    { action: "clear_display", say: "clear display" },
+    { action: "clear_display", say: "clear the display" },
   ],
   // ── rephrase ───────────────────────────────────────────────────────────────
   // Restructures the dictated transcript into notes aimed at a coding agent
@@ -177,8 +182,9 @@ VOICE — this is the most common way to get it wrong. Your output IS the speake
 
 Structure:
 - There is no fixed template. Give the message whatever shape suits what was actually said, and no more scaffolding than it needs.
-- Plain paragraphs are the default, even for several distinct points — one paragraph per point, in prose, is usually the right shape. Do not reach for a numbered or bulleted list just because there is more than one point.
-- Use a numbered or bulleted list only when the items are genuinely parallel, short, and the list form itself aids scanning (e.g. a set of terse options or settings). This should be the exception, not the default.
+- A single thought is just a clean paragraph. Do not wrap one point in a numbered list to make it look organised.
+- Several distinct points become a numbered list, one number per point, so the speaker can scan it and refer back to a number ("point 3").
+- CRITICAL: a numbered point is one idea, not one sentence. Never split a single idea across two numbers just to pad the list out — if two "points" are really the same point with more detail, that is one point. When in doubt, prefer fewer, fuller points over more, thinner ones.
 - A long message covering separate topics can use short headings to divide them — but only when the topics really are separate, and only when it helps someone reading it.
 - Group related things together. Keep the speaker's order: if they walked through the agent's points in sequence, follow that sequence.
 - Make each point's nature obvious from how it reads — something to do reads as an instruction, an opinion reads as an opinion, a constraint reads as a constraint. Don't sort them into buckets, and don't label them.
@@ -201,7 +207,14 @@ Rules for the rewriting:
 Referring to the agent's previous message:
 - The speaker is replying to something the agent said, but you cannot see it. Only they know what it was.
 - When they say a point number out loud ("on 5.1, …", "about point three"), carry it into the item: "Re 5.1: …". That reference came from them, so it is safe.
-- CRITICAL: never invent a reference. If they did not say a number, do not attach one. A wrong reference makes the agent act on the wrong item, which is far worse than no reference at all.`;
+- CRITICAL: never invent a reference. If they did not say a number, do not attach one. A wrong reference makes the agent act on the wrong item, which is far worse than no reference at all.
+
+Refining an existing draft (a <current_rephrased> block is present):
+- Your job is to update that draft, not to log what changed. The speaker rereads the whole draft afterward, so it has to read as one coherent version — not the old points plus a trailing pile of new ones.
+- Read each new thing said in <additional_transcript> and ask: does this belong to a point that's already in <current_rephrased>? If yes — more detail, a correction, a change of mind, an answer to something left open — rewrite THAT point in place with the new material folded in. Do not leave the old point as-is and add a second point for the same idea.
+- Only start a new numbered point for a genuinely new topic that nothing in the draft already covers.
+- You are allowed to rewrite, shorten, expand, merge, split, or reorder existing points if that's what makes the merged version correct — you are not restricted to appending.
+- The point numbers in your output are positions in this draft, not a permanent ID — they can shift as points are merged, split, or reordered. This is separate from "Re 5.1" references above, which point at the agent's earlier message and must never be touched or renumbered.`;
 
 // The system prompt is fixed unless config.yaml overrides it wholesale.
 function rephraseSystemPrompt() {
@@ -215,17 +228,25 @@ function tag(name, body) {
   return `<${name}>\n${String(body).trim()}\n</${name}>\n\n`;
 }
 
-// Every pass rewrites the whole transcript from scratch — no anchoring to a
-// prior draft. That keeps formatting mistakes from one pass from compounding
-// into the next; each pass is a clean shot at the full transcript instead of
-// an increment on top of whatever shape the last pass happened to produce.
+// First pass (no existing draft) and refinement pass (improve the draft with the
+// speech added since it was generated) differ only in which blocks are present.
+// A refinement pass merges new material into existing points in place rather
+// than appending — see "Refining an existing draft" in the system prompt.
 // `instructions` steers HOW this version is produced (see the system prompt) and
 // is present only when the speaker prefixed the trigger phrase with one.
-function buildRephraseUserPrompt({ transcript, instructions }) {
+function buildRephraseUserPrompt({ transcript, draft, additional, instructions }) {
   let out = "";
   if (instructions) out += tag("instructions", instructions);
   out += tag("transcript", transcript);
-  out += "Rewrite <transcript> in the format described in the system prompt.";
+  if (draft) {
+    out += tag("current_rephrased", draft);
+    if (additional) out += tag("additional_transcript", additional);
+    out +=
+      "Update <current_rephrased> using <additional_transcript>, which is what the speaker said after that version was produced. Fold new material into the existing point it belongs to — do not just append new points on top of ones that should have been updated. Only add a new point for a genuinely new topic. Output the full updated version in the format described in the system prompt.";
+  } else {
+    out +=
+      "Rewrite <transcript> in the format described in the system prompt.";
+  }
   if (instructions) {
     out +=
       "\n\nApply <instructions> to this version. They override the system prompt where they conflict. Do not reproduce them in your output.";
@@ -510,8 +531,8 @@ function refreshStatus() {
 // transcript pane no matter which tab is showing.
 let activePane = "transcript"; // "transcript" | "rephrased"
 // How many characters of the transcript the current rephrased draft was built
-// from. Used only to flag the draft as stale once more speech lands — every
-// rephrase pass itself always rewrites the full transcript from scratch.
+// from. Splits <transcript> from <additional_transcript> on a refinement pass,
+// and flags the draft as stale once more speech lands past this point.
 let rephraseOffset = 0;
 
 function paneEl(name) {
@@ -555,10 +576,9 @@ function appendTranscript(text) {
   updatePaneFlags();
 }
 
-// `toEnd` scrolls to the bottom instead of the top. Used when appending an
-// error message after a failed rephrase — that's the part you need to see.
-// A successful rephrase always starts at the top, since it's a fresh rewrite
-// read from the beginning.
+// `toEnd` scrolls to the bottom instead of the top. Used on a refinement pass,
+// where what you want to see is the material that just got added; a fresh pass
+// stays at the top because you read it from the beginning.
 function setRephrased(text, toEnd) {
   rephrasedEl.value = text;
   rephrasedEl.scrollTop = toEnd ? rephrasedEl.scrollHeight : 0;
@@ -586,6 +606,27 @@ function clearTranscript() {
   localStorage.removeItem(REPHRASE_OFFSET_KEY);
   showPane("transcript");
   if (n) log(`panes cleared (${n} chars) — persisted copies wiped`);
+}
+
+// Manual reset for one pane only — e.g. you don't like the rephrased draft and
+// want to retry from scratch without losing the dictation it came from. Unlike
+// clearTranscript(), this is not a delivery path, so there's no "half-cleared
+// state pastes stale text" risk to guard against: clearing just the active pane
+// is exactly what's wanted. Ctrl+L and the "clear display" voice command both
+// act on whichever pane (transcript or rephrased) is currently showing.
+function clearActivePane() {
+  const el = activePaneEl();
+  const n = el.value.length;
+  el.value = "";
+  if (activePane === "rephrased") {
+    rephraseOffset = 0;
+    localStorage.removeItem(REPHRASED_KEY);
+    localStorage.removeItem(REPHRASE_OFFSET_KEY);
+  } else {
+    localStorage.removeItem(TRANSCRIPT_KEY);
+  }
+  updatePaneFlags();
+  if (n) log(`${activePane} pane cleared (${n} chars)`);
 }
 
 // Crash recovery: reload whatever transcript is still persisted in localStorage.
@@ -646,17 +687,18 @@ async function postRephrase(userPrompt) {
   return String(raw).trim();
 }
 
-// Voice command `rephrase input`. Always a full, fresh rewrite of the whole
-// transcript — not an incremental refinement of whatever draft is already in
-// the Rephrased pane. Anchoring to a prior draft let a bad formatting choice
-// from one pass persist into the next; a clean rewrite every time doesn't.
+// Voice command `rephrase input`. An empty Rephrased pane means a fresh pass; a
+// non-empty one means refine THAT draft using whatever was said since — merging
+// new material into existing points rather than starting over (see "Refining an
+// existing draft" in the system prompt). Use `clear display` / Ctrl+L first if
+// you want to discard the draft and start fresh instead.
 //
 // `instructions` is anything the speaker said immediately before the trigger in
 // the same utterance ("cut this down by half, rephrase input"). It steers this
-// one pass only and is deliberately NOT stored anywhere: it never enters the
-// transcript, so it can never be replayed on a later pass and applied twice —
-// and because every pass regenerates from scratch, its effect doesn't persist
-// either.
+// one pass and is deliberately NOT stored anywhere: it never enters the
+// transcript, so it can never be replayed on a later pass and applied twice.
+// Its EFFECT still persists, because a refinement pass keeps the draft it is
+// handed rather than regenerating — a draft that was halved once stays halved.
 async function rephraseInput(instructions) {
   if (rephraseInFlight) {
     log("rephrase: already in flight, ignoring");
@@ -668,21 +710,32 @@ async function rephraseInput(instructions) {
     return;
   }
   const steer = String(instructions || "").trim();
-  const hadDraft = !!rephrasedEl.value.trim();
+  const draft = rephrasedEl.value.trim();
+  // A hand-edit above the offset would misalign the split; clamp and treat the
+  // whole transcript as new rather than slicing mid-word.
+  const offset = Math.min(rephraseOffset, transcript.length);
+  const prior = draft ? transcript.slice(0, offset).trim() : transcript;
+  const additional = draft ? transcript.slice(offset).trim() : "";
 
   rephraseInFlight = true;
   showPane("rephrased");
   const placeholder = rephrasedEl.placeholder;
-  rephrasedEl.placeholder = "Rephrasing…";
+  if (!draft) rephrasedEl.placeholder = "Rephrasing…";
   try {
-    const prompt = buildRephraseUserPrompt({ transcript, instructions: steer });
+    const prompt = buildRephraseUserPrompt({
+      transcript: prior || transcript,
+      draft,
+      additional,
+      instructions: steer,
+    });
     log(
-      `rephrase: transcript=${transcript.length}ch, model=${config.rephraseModel}` +
+      `rephrase: ${draft ? "refine" : "fresh"}, transcript=${transcript.length}ch, ` +
+        `additional=${additional.length}ch, model=${config.rephraseModel}` +
         (steer ? `, instructions="${steer}"` : "")
     );
     const out = await postRephrase(prompt);
     if (!out) throw new Error("empty response from the rephrase model");
-    setRephrased(out, false);
+    setRephrased(out, !!draft);
     // this draft now accounts for the whole transcript as it stands
     rephraseOffset = transcript.length;
     localStorage.setItem(REPHRASE_OFFSET_KEY, String(rephraseOffset));
@@ -694,7 +747,10 @@ async function rephraseInput(instructions) {
     // Show the failure in the pane rather than leaving it blank — the user
     // switched here expecting output and needs to know why there isn't any.
     const msg = `⚠ Rephrase failed — ${String(err.message || err)}`;
-    setRephrased(hadDraft ? rephrasedEl.value.trim() + "\n\n" + msg : msg, true);
+    // scroll to the end when appending to an existing draft — the error is at
+    // the bottom and is the whole reason for the update
+    if (draft) setRephrased(draft + "\n\n" + msg, true);
+    else setRephrased(msg);
   } finally {
     rephrasedEl.placeholder = placeholder;
     rephraseInFlight = false;
@@ -769,6 +825,9 @@ async function runCommand(cmd, leading) {
       break;
     case "rephrase":
       await rephraseInput(leading);
+      break;
+    case "clear_display":
+      clearActivePane();
       break;
     default:
       log(`voice command: unknown action '${cmd.action}' (ignored)`);
@@ -1412,7 +1471,7 @@ function handleKeydown(e) {
     copyTranscript().then((ok) => ok && clearTranscript());
   } else if (k === "l") {
     e.preventDefault();
-    clearTranscript();
+    clearActivePane();
   }
 }
 
@@ -1443,7 +1502,7 @@ function wire() {
   });
   $("btnToggleRec").addEventListener("click", toggleRecording);
   $("btnCopy").addEventListener("click", copyTranscript);
-  $("btnClear").addEventListener("click", clearTranscript);
+  $("btnClear").addEventListener("click", clearActivePane);
   $("tabTranscript").addEventListener("click", () => showPane("transcript"));
   $("tabRephrased").addEventListener("click", () => showPane("rephrased"));
   transcriptEl.addEventListener("input", () => {
