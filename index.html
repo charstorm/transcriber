@@ -38,21 +38,36 @@
     <section class="view" id="viewTranscript">
       <div class="api-warn hidden" id="apiWarn"></div>
       <div class="paste-warn hidden" id="pasteWarn"></div>
-      <!-- Pane tabs. Transcription always appends to the transcript pane, whichever
-           tab is showing — the tab is a view, not a mode. -->
+      <!-- Pane tabs, for the narrow window only — wide shows all three boxes at
+           once and hides these. Dictation lands in whichever box is SELECTED
+           ("select input" / "select output" / "select instruction"). -->
       <div class="tabbar" role="tablist">
         <button class="tab active" id="tabTranscript" role="tab">
-          Transcript<span class="tab-flag hidden" id="tabTranscriptFlag">new</span>
+          Input<span class="tab-flag hidden" id="tabTranscriptFlag">new</span>
         </button>
         <button class="tab" id="tabRephrased" role="tab">
-          Rephrased<span class="tab-flag hidden" id="tabRephrasedFlag">stale</span>
+          Output<span class="tab-flag hidden" id="tabRephrasedFlag">stale</span>
         </button>
       </div>
-      <div class="ta-wrap" id="wrapTranscript">
-        <textarea id="transcript" spellcheck="false" placeholder="Transcription will appear here…"></textarea>
-      </div>
-      <div class="ta-wrap pane-hidden" id="wrapRephrased">
-        <textarea id="rephrased" spellcheck="false" placeholder="Say “rephrase input” to restructure the transcript here…"></textarea>
+      <!-- Wide: input over instruction on the left, output on the right.
+           Narrow: one column, input/output tabbed, instruction always visible. -->
+      <div class="boxes">
+        <div class="box-col">
+          <div class="ta-wrap selected" id="wrapTranscript">
+            <span class="box-label">Input</span>
+            <textarea id="transcript" spellcheck="false" placeholder="Transcription will appear here…"></textarea>
+          </div>
+          <div class="ta-wrap" id="wrapInstruction">
+            <span class="box-label">Instruction</span>
+            <textarea id="instruction" spellcheck="false" placeholder="Say “select instruction”, then how the rewrite should read. Applies to every rephrase until cleared."></textarea>
+          </div>
+        </div>
+        <div class="ta-wrap pane-hidden" id="wrapRephrased">
+          <span class="box-label">
+            Output<span class="box-flag hidden" id="boxRephrasedFlag">stale</span>
+          </span>
+          <textarea id="rephrased" spellcheck="false" placeholder="Say “rephrase input” to restructure the transcript here…"></textarea>
+        </div>
       </div>
       <div class="transcript-toolbar">
         <button class="pill" id="btnToggleRec">
@@ -103,9 +118,9 @@
       <h2>Shortcuts</h2>
       <ul class="shortcuts">
         <li><kbd>Ctrl</kbd>+<kbd>M</kbd><span>Start / stop recording</span></li>
-        <li><kbd>Ctrl</kbd>+<kbd>C</kbd><span>Copy transcript</span></li>
-        <li><kbd>Ctrl</kbd>+<kbd>X</kbd><span>Cut transcript</span></li>
-        <li><kbd>Ctrl</kbd>+<kbd>L</kbd><span>Clear transcript</span></li>
+        <li><kbd>Ctrl</kbd>+<kbd>C</kbd><span>Copy (output if fresh, else input)</span></li>
+        <li><kbd>Ctrl</kbd>+<kbd>X</kbd><span>Copy, then clear input + output</span></li>
+        <li><kbd>Ctrl</kbd>+<kbd>L</kbd><span>Clear the selected box</span></li>
         <li><kbd>Esc</kbd><span>Hide the window (delivers nothing)</span></li>
       </ul>
       <p class="hint">Shortcuts are in-app only and fixed for now. Configurable / global shortcuts are planned.</p>

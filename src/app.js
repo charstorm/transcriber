@@ -64,6 +64,10 @@ const TRANSCRIPT_KEY = "transcriber:transcript";
 // guarantee covers both panes.
 const REPHRASED_KEY = "transcriber:rephrased";
 const REPHRASE_OFFSET_KEY = "transcriber:rephrase-offset";
+// Standing instructions for the rewriter. Persisted like the other two boxes, but
+// deliberately NOT cleared by a delivery or a full clear — it holds preferences
+// ("it's Medrenova", "keep it under a page") that outlive one dictation turn.
+const INSTRUCTION_KEY = "transcriber:instruction";
 
 const DEFAULTS = {
   endpoint: "https://openrouter.ai/api/v1/chat/completions",
@@ -105,11 +109,22 @@ const DEFAULTS = {
     // mandatory separator, so "rephrase input" cannot also match "rephrase the
     // input". Whichever way it comes out of the ASR, one of these fires.
     { action: "rephrase", say: "rephrase the input" },
-    // Wipes whichever pane is active (transcript or rephrased) so you can
-    // restart it — e.g. retry a rephrase you don't like without losing the
-    // dictation it was built from.
-    { action: "clear_display", say: "clear display" },
-    { action: "clear_display", say: "clear the display" },
+    // Pick the box dictation lands in. Three ways to say it, because all three
+    // come naturally mid-sentence and none of them collide.
+    { action: "select_input", say: "select input" },
+    { action: "select_input", say: "switch to input" },
+    { action: "select_input", say: "jump to input" },
+    { action: "select_output", say: "select output" },
+    { action: "select_output", say: "switch to output" },
+    { action: "select_output", say: "jump to output" },
+    { action: "select_instruction", say: "select instruction" },
+    { action: "select_instruction", say: "switch to instruction" },
+    { action: "select_instruction", say: "jump to instruction" },
+    // Wipes the SELECTED box only, so you can restart one without losing the
+    // others — e.g. retry a rephrase you don't like, or drop a standing
+    // instruction, without touching the dictation.
+    { action: "clear_box", say: "clear box" },
+    { action: "clear_box", say: "clear the box" },
     // Presses alt+Tab so you can move to the app you're dictating for without
     // touching the keyboard. Nothing is pasted and nothing is cleared — this only
     // moves focus, and the transcriber keeps recording behind whatever comes up.
@@ -282,6 +297,7 @@ const statusDot = $("statusDot");
 const statusText = $("statusText");
 const transcriptEl = $("transcript");
 const rephrasedEl = $("rephrased");
+const instructionEl = $("instruction");
 const recLabel = $("recLabel");
 const btnToggleRec = $("btnToggleRec");
 
@@ -494,54 +510,99 @@ function refreshStatus() {
   setStatus("listening");
 }
 
-// ── panes / tabs ─────────────────────────────────────────────────────────────
-// Two panes share the transcript view: the raw transcript and the rephrased
-// version. The tab is a VIEW, not a mode — dictation always appends to the
-// transcript pane no matter which tab is showing.
-let activePane = "transcript"; // "transcript" | "rephrased"
+// ── boxes ────────────────────────────────────────────────────────────────────
+// Three boxes: input (raw dictation), output (the rewrite), instruction (standing
+// notes for the rewriter). One is SELECTED, and the selected one is where
+// dictation lands — unlike the old tabs, this IS a mode, not just a view.
+//
+// In the wide layout all three are on screen at once; in the narrow one input and
+// output share a tabbed slot while instruction sits below. `visiblePane` tracks
+// which of that pair the tabs are showing, so selecting the instruction box
+// doesn't disturb it.
+let activePane = "transcript"; // "transcript" | "rephrased" | "instruction"
+let visiblePane = "transcript"; // "transcript" | "rephrased" (narrow layout only)
 // How many characters of the transcript the current rephrased draft was built
 // from. Splits <transcript> from <additional_transcript> on a refinement pass,
 // and flags the draft as stale once more speech lands past this point.
 let rephraseOffset = 0;
 
+const BOXES = {
+  transcript: { el: () => transcriptEl, wrap: "wrapTranscript", key: TRANSCRIPT_KEY },
+  rephrased: { el: () => rephrasedEl, wrap: "wrapRephrased", key: REPHRASED_KEY },
+  instruction: { el: () => instructionEl, wrap: "wrapInstruction", key: INSTRUCTION_KEY },
+};
+
 function paneEl(name) {
-  return name === "rephrased" ? rephrasedEl : transcriptEl;
+  return (BOXES[name] || BOXES.transcript).el();
 }
 
-// The pane a delivery (paste/copy) acts on — whichever tab is active.
+// The selected box — what `clear box`, Ctrl+L and dictation act on. Delivery does
+// NOT use this; see deliveryTarget().
 function activePaneEl() {
   return paneEl(activePane);
 }
 
-function showPane(name) {
-  activePane = name === "rephrased" ? "rephrased" : "transcript";
-  $("wrapTranscript").classList.toggle("pane-hidden", activePane !== "transcript");
-  $("wrapRephrased").classList.toggle("pane-hidden", activePane !== "rephrased");
-  $("tabTranscript").classList.toggle("active", activePane === "transcript");
-  $("tabRephrased").classList.toggle("active", activePane === "rephrased");
+function syncBoxes() {
+  $("wrapTranscript").classList.toggle("pane-hidden", visiblePane !== "transcript");
+  $("wrapRephrased").classList.toggle("pane-hidden", visiblePane !== "rephrased");
+  $("tabTranscript").classList.toggle("active", visiblePane === "transcript");
+  $("tabRephrased").classList.toggle("active", visiblePane === "rephrased");
+  for (const [name, box] of Object.entries(BOXES)) {
+    $(box.wrap).classList.toggle("selected", name === activePane);
+  }
   // the "new text landed" marker has served its purpose once you look at it
-  if (activePane === "transcript") $("tabTranscriptFlag").classList.add("hidden");
+  if (visiblePane === "transcript") $("tabTranscriptFlag").classList.add("hidden");
   updatePaneFlags();
 }
 
-// "stale" = the transcript has grown past what the current draft was built from,
-// so what you're looking at no longer reflects everything you've said.
-function updatePaneFlags() {
-  const stale =
-    !!rephrasedEl.value.trim() && transcriptEl.value.trim().length > rephraseOffset;
-  $("tabRephrasedFlag").classList.toggle("hidden", !stale);
+// Select a box: dictation and `clear box` now act on it.
+function showPane(name) {
+  activePane = BOXES[name] ? name : "transcript";
+  // Selecting the instruction box leaves the tabbed pair as it was.
+  if (activePane !== "instruction") visiblePane = activePane;
+  syncBoxes();
+  // put the caret where dictation is going, so typing follows speaking
+  activePaneEl().focus();
 }
 
-// ── transcript helpers ──────────────────────────────────────────────────────
+// Bring a pane into view in the narrow layout WITHOUT selecting it. Used after a
+// rephrase: you want to read the result, but the next thing you say is still
+// dictation and belongs in the input.
+function revealPane(name) {
+  visiblePane = name === "rephrased" ? "rephrased" : "transcript";
+  syncBoxes();
+}
+
+// "stale" = the transcript has grown past what the current draft was built from,
+// so the output no longer reflects everything you've said. Load-bearing: delivery
+// refuses to send a stale draft.
+function isStale() {
+  return !!rephrasedEl.value.trim() && transcriptEl.value.trim().length > rephraseOffset;
+}
+
+function updatePaneFlags() {
+  const stale = isStale();
+  $("tabRephrasedFlag").classList.toggle("hidden", !stale);
+  $("boxRephrasedFlag").classList.toggle("hidden", !stale);
+}
+
+// ── box helpers ─────────────────────────────────────────────────────────────
+// Dictation goes to the SELECTED box: normally the input, but "select instruction"
+// routes it to the standing notes, and "select output" lets you patch the draft by
+// voice. Whichever it is, the text is appended and persisted the same way.
 function appendTranscript(text) {
   const t = text.trim();
   if (!t) return;
-  const existing = transcriptEl.value.trim();
-  transcriptEl.value = existing ? existing + "\n" + t : t;
-  transcriptEl.scrollTop = transcriptEl.scrollHeight;
-  localStorage.setItem(TRANSCRIPT_KEY, transcriptEl.value);
-  // text landed while you were looking at the other pane — say so
-  if (activePane !== "transcript") $("tabTranscriptFlag").classList.remove("hidden");
+  const box = BOXES[activePane] || BOXES.transcript;
+  const el = box.el();
+  const existing = el.value.trim();
+  el.value = existing ? existing + "\n" + t : t;
+  el.scrollTop = el.scrollHeight;
+  localStorage.setItem(box.key, el.value);
+  // text landed in the input while the narrow layout was showing the output
+  if (activePane === "transcript" && visiblePane !== "transcript") {
+    $("tabTranscriptFlag").classList.remove("hidden");
+  }
   updatePaneFlags();
 }
 
@@ -555,16 +616,56 @@ function setRephrased(text, toEnd) {
   updatePaneFlags();
 }
 
-// Copy whichever pane is active — same rule as paste.
+// What leaves the app, for every delivery path (paste, copy, cut). Selection is
+// deliberately ignored — the state decides, so the same thing goes out whichever
+// box you happen to be looking at:
+//   output, fresh  -> send it (the rewrite is the point)
+//   output, stale  -> send NOTHING and say so. Falling back to the input here
+//                     would quietly send unrewritten text and defeat the purpose;
+//                     say "rephrase input" and try again.
+//   no output      -> send the raw input
+//   neither        -> nothing to do
+function deliveryTarget() {
+  const out = rephrasedEl.value.trim();
+  const inp = transcriptEl.value.trim();
+  if (out) {
+    return isStale() ? { kind: "stale" } : { kind: "output", text: out };
+  }
+  if (inp) return { kind: "input", text: inp };
+  return { kind: "empty" };
+}
+
+// Shown when a delivery is refused, so the reason is on screen and not just in the
+// log. The status line can be overwritten by the next VAD event a moment later, so
+// the output box flashes too; the persistent "stale" badge explains why.
+let staleWarnTimer = null;
+function warnStale() {
+  setStatus("error");
+  statusText.textContent = "output is stale — say “rephrase input”";
+  revealPane("rephrased"); // make sure the thing being refused is on screen
+  const wrap = $("wrapRephrased");
+  wrap.classList.add("warn");
+  clearTimeout(staleWarnTimer);
+  staleWarnTimer = setTimeout(() => wrap.classList.remove("warn"), 2500);
+  log("delivery refused: output is stale (transcript has moved on)");
+}
+
 async function copyTranscript() {
-  const text = activePaneEl().value.trim();
-  if (!text) return false;
-  await writeText(text);
+  const target = deliveryTarget();
+  if (target.kind === "stale") {
+    warnStale();
+    return false;
+  }
+  if (target.kind === "empty") return false;
+  await writeText(target.text);
+  log(`copied ${target.text.length} chars from ${target.kind}`);
   return true;
 }
 
-// Clearing is all-or-nothing across both panes: they are two views of one
-// dictation turn, and a half-cleared state would silently paste stale text.
+// Wipes input AND output together after a successful delivery: they are two views
+// of one dictation turn, and keeping half of it would leave the next turn building
+// on text that was already sent. The instruction box is NOT touched — it holds
+// standing preferences, not turn content.
 function clearTranscript() {
   const n = transcriptEl.value.length + rephrasedEl.value.length;
   transcriptEl.value = "";
@@ -574,28 +675,25 @@ function clearTranscript() {
   localStorage.removeItem(REPHRASED_KEY);
   localStorage.removeItem(REPHRASE_OFFSET_KEY);
   showPane("transcript");
-  if (n) log(`panes cleared (${n} chars) — persisted copies wiped`);
+  if (n) log(`input + output cleared (${n} chars) — persisted copies wiped`);
 }
 
-// Manual reset for one pane only — e.g. you don't like the rephrased draft and
-// want to retry from scratch without losing the dictation it came from. Unlike
-// clearTranscript(), this is not a delivery path, so there's no "half-cleared
-// state pastes stale text" risk to guard against: clearing just the active pane
-// is exactly what's wanted. Ctrl+L and the "clear display" voice command both
-// act on whichever pane (transcript or rephrased) is currently showing.
+// `clear box` / Ctrl+L: reset the SELECTED box and nothing else — retry a rewrite
+// you don't like without losing the dictation, or drop a standing instruction
+// without touching either. Not a delivery path, so there's no risk of leaving a
+// half-cleared state that sends the wrong thing.
 function clearActivePane() {
-  const el = activePaneEl();
+  const box = BOXES[activePane] || BOXES.transcript;
+  const el = box.el();
   const n = el.value.length;
   el.value = "";
+  localStorage.removeItem(box.key);
   if (activePane === "rephrased") {
     rephraseOffset = 0;
-    localStorage.removeItem(REPHRASED_KEY);
     localStorage.removeItem(REPHRASE_OFFSET_KEY);
-  } else {
-    localStorage.removeItem(TRANSCRIPT_KEY);
   }
   updatePaneFlags();
-  if (n) log(`${activePane} pane cleared (${n} chars)`);
+  if (n) log(`${activePane} box cleared (${n} chars)`);
 }
 
 // Crash recovery: reload whatever transcript is still persisted in localStorage.
@@ -604,7 +702,14 @@ function clearActivePane() {
 function restoreTranscript() {
   const saved = localStorage.getItem(TRANSCRIPT_KEY) || "";
   const draft = localStorage.getItem(REPHRASED_KEY) || "";
+  // Standing instructions survive everything by design, so this is a normal
+  // restore rather than crash recovery.
+  const steer = localStorage.getItem(INSTRUCTION_KEY) || "";
   rephraseOffset = parseInt(localStorage.getItem(REPHRASE_OFFSET_KEY) || "0", 10) || 0;
+  if (steer.trim()) {
+    instructionEl.value = steer;
+    log(`restore: instruction box (${steer.length} chars) still applies`);
+  }
   if (draft.trim()) {
     rephrasedEl.value = draft;
     log(`restore: recovered ${draft.length} rephrased chars (offset ${rephraseOffset})`);
@@ -659,16 +764,14 @@ async function postRephrase(userPrompt) {
 // Voice command `rephrase input`. An empty Rephrased pane means a fresh pass; a
 // non-empty one means refine THAT draft using whatever was said since — merging
 // new material into existing points rather than starting over (see "Refining an
-// existing draft" in the system prompt). Use `clear display` / Ctrl+L first if
-// you want to discard the draft and start fresh instead.
+// existing draft" in the system prompt). Use `clear box` / Ctrl+L first if you
+// want to discard the draft and start fresh instead.
 //
-// `instructions` is anything the speaker said immediately before the trigger in
-// the same utterance ("cut this down by half, rephrase input"). It steers this
-// one pass and is deliberately NOT stored anywhere: it never enters the
-// transcript, so it can never be replayed on a later pass and applied twice.
-// Its EFFECT still persists, because a refinement pass keeps the draft it is
-// handed rather than regenerating — a draft that was halved once stays halved.
-async function rephraseInput(instructions) {
+// Steering comes from the instruction box, which STANDS until you clear it — so a
+// preference ("it's Medrenova", "keep it terse") keeps applying to every pass. That
+// also means a one-shot transform ("halve it") re-applies on the next pass; select
+// the instruction box and say "clear box" when you're done with it.
+async function rephraseInput() {
   if (rephraseInFlight) {
     log("rephrase: already in flight, ignoring");
     return;
@@ -678,7 +781,7 @@ async function rephraseInput(instructions) {
     log("rephrase: transcript empty, nothing to do");
     return;
   }
-  const steer = String(instructions || "").trim();
+  const steer = instructionEl.value.trim();
   const draft = rephrasedEl.value.trim();
   // A hand-edit above the offset would misalign the split; clamp and treat the
   // whole transcript as new rather than slicing mid-word.
@@ -687,7 +790,7 @@ async function rephraseInput(instructions) {
   const additional = draft ? transcript.slice(offset).trim() : "";
 
   rephraseInFlight = true;
-  showPane("rephrased");
+  revealPane("rephrased"); // read the result; keep dictating into the input
   const placeholder = rephrasedEl.placeholder;
   if (!draft) rephrasedEl.placeholder = "Rephrasing…";
   try {
@@ -777,24 +880,30 @@ function detectCommand(text) {
   return null;
 }
 
-// True for actions that read the text preceding their trigger as a directive to
-// themselves rather than as dictated content. For these the leading text is NOT
-// appended to the transcript — it is handed to the action instead.
-function consumesLeadingText(cmd) {
-  return cmd.action === "rephrase";
-}
-
-// Run a matched command's action. `leading` is the text that preceded the trigger
-// in the same utterance; only actions listed in consumesLeadingText receive it.
-async function runCommand(cmd, leading) {
+// Run a matched command's action. Anything said before the trigger in the same
+// utterance is always kept as dictated content — the instruction box is how you
+// steer the rewriter now, so no action reads its own leading text.
+async function runCommand(cmd) {
   switch (cmd.action) {
     case "paste_enter_clear":
       await pasteEnterClear();
       break;
     case "rephrase":
-      await rephraseInput(leading);
+      await rephraseInput();
       break;
-    case "clear_display":
+    case "select_input":
+      showPane("transcript");
+      log("selected input box");
+      break;
+    case "select_output":
+      showPane("rephrased");
+      log("selected output box");
+      break;
+    case "select_instruction":
+      showPane("instruction");
+      log("selected instruction box");
+      break;
+    case "clear_box":
       clearActivePane();
       break;
     case "switch_window":
@@ -805,15 +914,18 @@ async function runCommand(cmd, leading) {
   }
 }
 
-// paste_enter_clear: paste the ACTIVE pane (transcript or rephrased), press
-// Enter, then wipe both panes for the next turn. NO window hide — the app is
-// left exactly where it is and keeps recording. (Whether the paste lands in
-// another app depends on which window has focus; managing that is the deferred
-// foreground/background work.)
+// paste_enter_clear: send whatever deliveryTarget() picks, press Enter, then wipe
+// input + output for the next turn. The only path that sends text anywhere. NO
+// window hide — the app is left exactly where it is and keeps recording, so use
+// `switch window` first if the paste needs to land somewhere else.
 async function pasteEnterClear() {
-  const text = activePaneEl().value.trim();
-  if (!text) {
-    log(`paste_enter_clear: ${activePane} pane empty, nothing to send`);
+  const target = deliveryTarget();
+  if (target.kind === "stale") {
+    warnStale();
+    return;
+  }
+  if (target.kind === "empty") {
+    log("paste_enter_clear: input and output both empty, nothing to send");
     return;
   }
   if (!(config.autoPaste && pasteAvailable)) {
@@ -824,13 +936,13 @@ async function pasteEnterClear() {
     // wl-copy loads the clipboard synchronously inside paste_transcript, so the
     // text is safely captured before we clear the textarea below.
     await invoke("paste_transcript", {
-      text,
+      text: target.text,
       pasteKey: config.pasteKey,
       delayMs: config.pasteDelayMs,
       enterKey: config.enterKey, // press Enter after the paste
     });
     clearTranscript();
-    log(`paste_enter_clear: sent ${text.length} chars from ${activePane} + Enter, panes cleared`);
+    log(`paste_enter_clear: sent ${target.text.length} chars from ${target.kind} + Enter, boxes cleared`);
     await sleep(150); // let the detached ydotool finish spawning
   } catch (err) {
     console.error("paste_enter_clear failed:", err);
@@ -910,19 +1022,13 @@ function settleOrdered(seq, text) {
     // utterances have already landed too.
     const det = detectCommand(t);
     if (det) {
-      if (det.leading && consumesLeadingText(det.cmd)) {
-        // e.g. "cut this down by half, rephrase input" — the leading text is an
-        // instruction to the action, so it must stay OUT of the transcript.
-        log(`voice command: "${t}" -> ${det.cmd.action} (leading text taken as instructions)`);
-      } else if (det.leading) {
+      if (det.leading) {
         log(`voice command: "${t}" -> ${det.cmd.action} (kept leading text, stripped trigger)`);
         appendTranscript(det.leading);
       } else {
         log(`voice command (standalone): "${t}" -> ${det.cmd.action}`);
       }
-      runCommand(det.cmd, det.leading).catch((e) =>
-        log("voice command failed:", String(e))
-      );
+      runCommand(det.cmd).catch((e) => log("voice command failed:", String(e)));
     } else {
       appendTranscript(t);
     }
@@ -1437,8 +1543,11 @@ function wire() {
   $("btnToggleRec").addEventListener("click", toggleRecording);
   $("btnCopy").addEventListener("click", copyTranscript);
   $("btnClear").addEventListener("click", clearActivePane);
-  $("tabTranscript").addEventListener("click", () => showPane("transcript"));
-  $("tabRephrased").addEventListener("click", () => showPane("rephrased"));
+  // A tab is a view, not a selection: tapping "output" to read it must not
+  // redirect your dictation there. Selecting is done by voice, or by clicking
+  // into a box (the focus handler below).
+  $("tabTranscript").addEventListener("click", () => revealPane("transcript"));
+  $("tabRephrased").addEventListener("click", () => revealPane("rephrased"));
   transcriptEl.addEventListener("input", () => {
     localStorage.setItem(TRANSCRIPT_KEY, transcriptEl.value);
     updatePaneFlags();
@@ -1447,6 +1556,15 @@ function wire() {
   rephrasedEl.addEventListener("input", () =>
     localStorage.setItem(REPHRASED_KEY, rephrasedEl.value)
   );
+  instructionEl.addEventListener("input", () =>
+    localStorage.setItem(INSTRUCTION_KEY, instructionEl.value)
+  );
+  // clicking into a box selects it, so dictation follows the caret
+  for (const [name, box] of Object.entries(BOXES)) {
+    box.el().addEventListener("focus", () => {
+      if (activePane !== name) showPane(name);
+    });
+  }
   document.addEventListener("keydown", handleKeydown);
   // follow the system default mic across USB hot-plugs (see mic device watch)
   navigator.mediaDevices.addEventListener("devicechange", onDeviceChange);
@@ -1500,6 +1618,7 @@ async function init() {
 
   restoreTranscript(); // crash recovery: reload any undelivered transcript
   wire();
+  showPane("transcript"); // start selected on the input, caret included
   // wake on a second launch (resident single-instance — see Rust callback)
   getCurrentWindow().listen("wake", onWake).catch((e) => log("wake listen failed:", String(e)));
   resetViz();

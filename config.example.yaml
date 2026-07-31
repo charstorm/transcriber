@@ -38,13 +38,13 @@ paste_delay_ms: 800
 #
 # Providing this key REPLACES the built-in default (strike and reload). Omit it
 # to keep the default. Add multiple entries to map several phrases to an action.
-#   rephrase = rewrite the transcript into cleaner, better-structured notes in
-#           the second tab, then switch to it. Say it again after dictating
-#           more and it improves that draft rather than starting over.
-#           Anything said just before this trigger is read as an instruction to
-#           the rewriter, not as dictation — "cut this down by half, rephrase
-#           input". It steers that one pass and is kept out of the transcript.
-#   clear_display = wipe whichever pane is showing, leaving the other one alone.
+#   rephrase = rewrite the input into cleaner, better-structured notes in the
+#           output box. Say it again after dictating more and it improves that
+#           draft rather than starting over. Whatever is in the instruction box
+#           steers every pass, and keeps applying until you clear it.
+#   select_input / select_output / select_instruction = choose the box dictation
+#           lands in. "switch to X" and "jump to X" say the same thing.
+#   clear_box = wipe the selected box, leaving the other two alone.
 #   switch_window = press the window-switcher key (alt+Tab) so you can move to
 #           the app you're dictating for hands-free. Pastes nothing, clears
 #           nothing, and recording continues behind the window that comes up.

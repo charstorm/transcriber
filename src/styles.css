@@ -323,6 +323,9 @@ body {
   flex: 1;
   min-height: 0;
   display: flex;
+  /* column so the box label stacks above its textarea instead of beside it */
+  flex-direction: column;
+  gap: 4px;
   padding: 7px 8px;
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   /* flat near-black panel, no gradient sweep — a very faint radial glow
@@ -341,8 +344,103 @@ body {
   box-shadow: inset 0 4px 26px rgba(0, 0, 0, 0.55);
 }
 
+/* ── three-box layout ─────────────────────────────────────────
+   Narrow (default): one column — input/output tabbed, instruction a short strip
+   below. Wide: input over instruction on the left, output on the right, all
+   three visible and the tabs gone. */
+.boxes {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.box-col {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#wrapInstruction {
+  flex: 0 0 78px; /* short strip when stacked; a share of the column when wide */
+}
+
+/* Which box dictation lands in. Deliberately loud — sending speech to the wrong
+   box is the main way this layout can bite, so the selected one is unmistakable
+   (brighter border + a ring) rather than the others being dimmed. */
+.ta-wrap.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 4px 26px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--accent-line);
+}
+
+/* Box names. Hidden when the tabs are doing the labelling (narrow), except on
+   the instruction box, which has no tab. */
+.box-label {
+  display: none;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--body);
+}
+.ta-wrap.selected .box-label {
+  color: var(--accent);
+}
+#wrapInstruction .box-label {
+  display: block;
+}
+/* "stale": the output no longer reflects everything said, so delivery refuses to
+   send it. Alert-coloured because it blocks an action, unlike the accent flags. */
+.box-flag {
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: #fff;
+  background: var(--danger);
+  border-radius: 999px;
+}
+.box-flag.hidden {
+  display: none;
+}
+/* brief flash when a delivery is refused — the status line can be overwritten by
+   the next VAD event, so the box itself carries the rejection */
+.ta-wrap.warn {
+  border-color: var(--danger);
+  box-shadow: inset 0 4px 26px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--alert-line);
+}
+
+@media (min-width: 900px) {
+  .tabbar {
+    display: none;
+  }
+  .box-label {
+    display: block;
+  }
+  .boxes {
+    flex-direction: row;
+  }
+  .box-col,
+  #wrapRephrased {
+    flex: 1;
+  }
+  #wrapTranscript {
+    flex: 4; /* input ~80% of the left column, instruction ~20% */
+  }
+  #wrapInstruction {
+    flex: 1;
+  }
+  /* every box is visible here — the tab-driven hide only applies when stacked */
+  .ta-wrap.pane-hidden {
+    display: flex;
+  }
+}
+
 #transcript,
-#rephrased {
+#rephrased,
+#instruction {
   flex: 1;
   min-height: 0;
   width: 100%;
@@ -360,8 +458,14 @@ body {
   outline: none;
 }
 #transcript::placeholder,
-#rephrased::placeholder {
+#rephrased::placeholder,
+#instruction::placeholder {
   color: var(--muted);
+}
+/* the instruction box is a short strip — smaller type so a couple of lines fit */
+#instruction {
+  font-size: 13.5px;
+  line-height: 1.55;
 }
 
 .transcript-toolbar {
