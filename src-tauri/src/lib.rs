@@ -256,40 +256,48 @@ fn ydotool_socket() -> Option<std::path::PathBuf> {
 // passed to ydotool as a separate argv (no shell), but we validate anyway so a
 // malformed config value fails loudly instead of silently misfiring.
 #[cfg(target_os = "linux")]
-fn valid_paste_key(k: &str) -> bool {
+fn valid_key_combo(k: &str) -> bool {
     !k.is_empty()
         && k.len() <= 64
         && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '+')
 }
 
-// Returns Ok(()) when auto-paste can work right now, else a user-facing reason.
+// Returns Ok(()) when we can synthesize a keystroke at all. Shared by the paste
+// path and by press_keys, which needs the keyboard but not the clipboard.
 #[cfg(target_os = "linux")]
-fn linux_paste_check() -> Result<(), String> {
+fn linux_key_check() -> Result<(), String> {
     let wayland = std::env::var("WAYLAND_DISPLAY")
         .map(|v| !v.is_empty())
         .unwrap_or(false);
     if !wayland {
         return Err(
-            "Auto-paste currently requires a Wayland session (XDG_SESSION_TYPE=wayland)."
+            "Synthesizing keystrokes currently requires a Wayland session (XDG_SESSION_TYPE=wayland)."
                 .into(),
         );
     }
-    let mut missing = Vec::new();
-    if which("wl-copy").is_none() {
-        missing.push("wl-copy (package: wl-clipboard)");
-    }
     if which("ydotool").is_none() {
-        missing.push("ydotool");
-    }
-    if !missing.is_empty() {
-        return Err(format!(
-            "Missing tool(s): {}. Install them (e.g. `sudo apt install wl-clipboard ydotool`), then try again.",
-            missing.join(", ")
-        ));
+        return Err(
+            "Missing tool: ydotool. Install it (e.g. `sudo apt install ydotool`), then try again."
+                .into(),
+        );
     }
     if !proc_running("ydotoold") {
         return Err(
             "ydotoold is not running. Start it (`systemctl --user start ydotool` or run `ydotoold &`), then try again."
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+// Returns Ok(()) when auto-paste can work right now, else a user-facing reason.
+// Paste needs everything a keystroke needs, plus the clipboard.
+#[cfg(target_os = "linux")]
+fn linux_paste_check() -> Result<(), String> {
+    linux_key_check()?;
+    if which("wl-copy").is_none() {
+        return Err(
+            "Missing tool: wl-copy (package: wl-clipboard). Install it (e.g. `sudo apt install wl-clipboard`), then try again."
                 .into(),
         );
     }
@@ -341,13 +349,13 @@ fn paste_transcript(
         use std::process::{Command, Stdio};
 
         linux_paste_check()?;
-        if !valid_paste_key(&paste_key) {
+        if !valid_key_combo(&paste_key) {
             return Err(format!(
                 "Invalid paste_key '{paste_key}'. Use names joined by '+', e.g. ctrl+v or ctrl+shift+v."
             ));
         }
         if let Some(ek) = &enter_key {
-            if !valid_paste_key(ek) {
+            if !valid_key_combo(ek) {
                 return Err(format!(
                     "Invalid enter_key '{ek}'. Use ydotool key names joined by '+', e.g. Enter."
                 ));
@@ -421,6 +429,58 @@ fn paste_transcript(
     }
 }
 
+// Press a key combo in whatever window currently has focus — no clipboard
+// involved. Used by the `switch window` voice command (alt+Tab), which needs the
+// keystroke to land on the compositor rather than on any particular app.
+//
+// Detached with setsid for the same reason as the paste path: the keystroke moves
+// focus away from us, and it must complete regardless of what happens here.
+#[tauri::command]
+fn press_keys(keys: String, delay_ms: Option<u64>) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::{Command, Stdio};
+
+        linux_key_check()?;
+        if !valid_key_combo(&keys) {
+            return Err(format!(
+                "Invalid key combo '{keys}'. Use ydotool key names joined by '+', e.g. alt+Tab."
+            ));
+        }
+        // Default 0: unlike paste, nothing has to regain focus first — the combo
+        // is for the compositor and should fire as soon as it's spoken.
+        let delay = delay_ms.unwrap_or(0).min(10_000);
+        let socket = ydotool_socket();
+        append_log(&format!(
+            "[keys] begin: keys={keys}, delay={delay}ms, socket={socket:?}"
+        ));
+
+        let mut cmd = Command::new("setsid");
+        cmd.arg("ydotool")
+            .arg("key")
+            .arg("--delay")
+            .arg(delay.to_string())
+            .arg(&keys)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        if let Some(s) = &socket {
+            cmd.env("YDOTOOL_SOCKET", s);
+        }
+        cmd.spawn().map_err(|e| {
+            append_log(&format!("[keys] ydotool spawn failed: {e}"));
+            format!("failed to run ydotool: {e}")
+        })?;
+        append_log("[keys] ydotool spawned (setsid, detached)");
+        Ok(())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (keys, delay_ms);
+        Err("Key synthesis is only implemented on Linux for now.".into())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -433,7 +493,9 @@ pub fn run() {
             use tauri::{Emitter, Manager};
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
-                let _ = window.center(); // re-center on every wake, not just first launch
+                // Re-maximize on every wake, not just first launch — if the last
+                // session left it resized, waking should still come back full.
+                let _ = window.maximize();
                 let _ = window.show();
                 let _ = window.set_focus();
                 let _ = window.emit("wake", ());
@@ -448,7 +510,8 @@ pub fn run() {
             log_append,
             load_config,
             paste_diagnostics,
-            paste_transcript
+            paste_transcript,
+            press_keys
         ])
         .setup(|app| {
             // On Linux, WebKitGTK denies getUserMedia (microphone) by default.

@@ -19,6 +19,7 @@
         "minWidth": 285,
         "minHeight": 350,
         "center": true,
+        "maximized": true,
         "decorations": false,
         "alwaysOnTop": true,
         "transparent": false,

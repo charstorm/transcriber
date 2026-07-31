@@ -44,6 +44,10 @@ paste_delay_ms: 800
 #           Anything said just before this trigger is read as an instruction to
 #           the rewriter, not as dictation — "cut this down by half, rephrase
 #           input". It steers that one pass and is kept out of the transcript.
+#   clear_display = wipe whichever pane is showing, leaving the other one alone.
+#   switch_window = press the window-switcher key (alt+Tab) so you can move to
+#           the app you're dictating for hands-free. Pastes nothing, clears
+#           nothing, and recording continues behind the window that comes up.
 commands:
   - action: paste_enter_clear
     say: strike and reload
@@ -51,8 +55,15 @@ commands:
     say: rephrase input
   - action: rephrase
     say: rephrase the input
+  - action: clear_display
+    say: clear display
+  - action: switch_window
+    say: switch window
 # Key ydotool presses after the paste for paste_enter_clear (ydotool key name).
 enter_key: Enter
+# Key ydotool presses for switch_window. Change it if your compositor binds the
+# window switcher to something other than alt+Tab.
+switch_window_key: alt+Tab
 
 # ── rephrase ─────────────────────────────────────────────────────────────────
 # Model used by the `rephrase` command. Must be a chat LLM (not an audio
