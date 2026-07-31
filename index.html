@@ -28,7 +28,7 @@
         <button class="icon-btn" id="btnShortcuts" title="Shortcuts" aria-label="Shortcuts">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M10 13h.01M14 13h.01M18 13h.01M8 17h8"/></svg>
         </button>
-        <button class="icon-btn close" id="btnClose" title="Close (pastes / copies if enabled)" aria-label="Close">
+        <button class="icon-btn close" id="btnClose" title="Close" aria-label="Close">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
       </div>
@@ -86,10 +86,7 @@
         <input type="checkbox" id="cfgAutoRecord" /> Auto-record on launch
       </label>
       <label class="check">
-        <input type="checkbox" id="cfgAutoCopy" /> Auto-copy transcript on close
-      </label>
-      <label class="check">
-        <input type="checkbox" id="cfgAutoPaste" /> Auto-paste transcript into focused app on close
+        <input type="checkbox" id="cfgAutoPaste" /> Auto-paste on “strike and reload”
       </label>
       <label>Rephrase model
         <input type="text" id="cfgRephraseModel" placeholder="google/gemini-3.1-flash-lite" />
@@ -109,7 +106,7 @@
         <li><kbd>Ctrl</kbd>+<kbd>C</kbd><span>Copy transcript</span></li>
         <li><kbd>Ctrl</kbd>+<kbd>X</kbd><span>Cut transcript</span></li>
         <li><kbd>Ctrl</kbd>+<kbd>L</kbd><span>Clear transcript</span></li>
-        <li><kbd>Esc</kbd><span>Paste / copy (if enabled) &amp; quit</span></li>
+        <li><kbd>Esc</kbd><span>Hide the window (delivers nothing)</span></li>
       </ul>
       <p class="hint">Shortcuts are in-app only and fixed for now. Configurable / global shortcuts are planned.</p>
       <div class="form-actions">

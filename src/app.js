@@ -73,9 +73,9 @@ const DEFAULTS = {
   // alternatives.
   model: "mistralai/voxtral-small-24b-2507",
   autoRecord: true,
-  autoCopy: true,
-  // paste the transcript into the previously-focused app on close (Linux/Wayland
-  // only; requires wl-copy + ydotool + ydotoold — see paste_diagnostics).
+  // master switch for the paste path used by `strike and reload` (Linux/Wayland
+  // only; requires wl-copy + ydotool + ydotoold — see paste_diagnostics). Esc and
+  // the close button deliver nothing, so this is the only thing it gates.
   autoPaste: true,
   // key sequence ydotool presses to paste. ctrl+shift+v works in terminals and
   // most GUI apps; plain ctrl+v is a no-op in terminals.
@@ -455,7 +455,6 @@ function saveConfig() {
     apiKey: $("cfgApiKey").value.trim(),
     model: $("cfgModel").value.trim() || DEFAULTS.model,
     autoRecord: $("cfgAutoRecord").checked,
-    autoCopy: $("cfgAutoCopy").checked,
     autoPaste: $("cfgAutoPaste").checked,
     rephraseModel: $("cfgRephraseModel").value.trim() || DEFAULTS.rephraseModel,
   };
@@ -467,7 +466,6 @@ function fillConfigForm() {
   $("cfgApiKey").value = config.apiKey;
   $("cfgModel").value = config.model;
   $("cfgAutoRecord").checked = config.autoRecord;
-  $("cfgAutoCopy").checked = config.autoCopy;
   $("cfgAutoPaste").checked = config.autoPaste;
   $("cfgRephraseModel").value = config.rephraseModel;
 }
@@ -1318,70 +1316,20 @@ function toggleRecording() {
   isRecording ? stopRecording() : startRecording();
 }
 
-// ── done: paste, then hide (Esc) or quit (X) ──────────────────────────────────
-// Both exits first deliver the transcript: auto-paste into the previously-focused
-// app (the primary flow) or, failing that, copy to the clipboard. Pasting also
-// loads the clipboard, so an auto-paste implicitly satisfies auto-copy too.
-// Hiding the window here is also what yields focus back so the keystroke lands in
-// the right app — for Esc that hide is the end state; for X we close after.
-async function pasteTranscript() {
-  const text = activePaneEl().value.trim();
-  log(`done: ${text.length} chars from ${activePane} pane, autoPaste=${config.autoPaste}, pasteAvailable=${pasteAvailable}, autoCopy=${config.autoCopy}`);
-  if (text && config.autoPaste && pasteAvailable) {
-    try {
-      // Yield focus back to the previous window before the keystroke fires.
-      log("done: hiding window for auto-paste");
-      await getCurrentWindow().hide();
-      await invoke("paste_transcript", {
-        text,
-        pasteKey: config.pasteKey,
-        delayMs: config.pasteDelayMs,
-      });
-      log("done: paste_transcript invoked ok");
-      // brief beat so the detached ydotool is fully spawned before we move on
-      await sleep(150);
-      clearTranscript(); // delivered — safe to drop the persisted copy
-    } catch (err) {
-      console.error("auto-paste failed:", err);
-      log("auto-paste failed:", String(err));
-      // don't lose the text — fall back to the clipboard
-      try {
-        if (await copyTranscript()) {
-          log("done: fallback clipboard copy ok — transcript consumed");
-          clearTranscript();
-        }
-      } catch (e) {
-        log("done: fallback copy failed too — keeping transcript persisted:", String(e));
-      }
-    }
-  } else if (text && config.autoCopy) {
-    try {
-      if (await copyTranscript()) {
-        log("done: auto-copy ok — transcript consumed");
-        clearTranscript();
-      }
-    } catch (err) {
-      console.error("auto-copy failed:", err);
-      log("done: auto-copy failed — keeping transcript persisted:", String(err));
-    }
-  } else if (text) {
-    log("done: no paste/copy configured — transcript kept persisted");
-  }
-}
-
-// Esc: paste, release the mic, and HIDE — the app stays resident so the next
-// hotkey press wakes it instantly (no WebKitGTK cold start).
+// Esc: release the mic and HIDE — the app stays resident so the next hotkey press
+// wakes it instantly (no WebKitGTK cold start). Delivers NOTHING: hiding is not a
+// send. Whatever is on the canvas stays on it (and in localStorage), so hide and
+// wake — or a full restart — comes back to exactly what you had.
 async function hideApp() {
-  await pasteTranscript();
   stopRecording(); // releases the mic + resets recording state/UI
   resetSession(); // zero the counters/ordering for the next dictation
   await getCurrentWindow().hide();
   log("hidden (resident)");
 }
 
-// X button: paste, release the mic, and actually QUIT the process.
+// X button: release the mic and actually QUIT the process. Delivers nothing, same
+// as Esc — `strike and reload` is the only path that sends text anywhere.
 async function quitApp() {
-  await pasteTranscript();
   stopRecording();
   await getCurrentWindow().close();
 }
