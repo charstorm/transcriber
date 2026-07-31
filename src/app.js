@@ -110,16 +110,28 @@ const DEFAULTS = {
     // input". Whichever way it comes out of the ASR, one of these fires.
     { action: "rephrase", say: "rephrase the input" },
     // Pick the box dictation lands in. Three ways to say it, because all three
-    // come naturally mid-sentence and none of them collide.
+    // come naturally mid-sentence and none of them collide. Each also has a
+    // "the" variant: commandRegex needs the exact word sequence, so "switch to
+    // the output" would otherwise match nothing — and both you and the ASR slip
+    // that article in without noticing.
     { action: "select_input", say: "select input" },
+    { action: "select_input", say: "select the input" },
     { action: "select_input", say: "switch to input" },
+    { action: "select_input", say: "switch to the input" },
     { action: "select_input", say: "jump to input" },
+    { action: "select_input", say: "jump to the input" },
     { action: "select_output", say: "select output" },
+    { action: "select_output", say: "select the output" },
     { action: "select_output", say: "switch to output" },
+    { action: "select_output", say: "switch to the output" },
     { action: "select_output", say: "jump to output" },
+    { action: "select_output", say: "jump to the output" },
     { action: "select_instruction", say: "select instruction" },
+    { action: "select_instruction", say: "select the instruction" },
     { action: "select_instruction", say: "switch to instruction" },
+    { action: "select_instruction", say: "switch to the instruction" },
     { action: "select_instruction", say: "jump to instruction" },
+    { action: "select_instruction", say: "jump to the instruction" },
     // Wipes the SELECTED box only, so you can restart one without losing the
     // others — e.g. retry a rephrase you don't like, or drop a standing
     // instruction, without touching the dictation.
