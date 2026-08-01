@@ -203,15 +203,14 @@ function buildSystemPrompt(instructions) {
 const REPHRASE_SYSTEM_PROMPT = `You rewrite dictated speech into a clear message from the speaker to their coding agent.
 
 Rewrite only — never answer the transcript, never act on it, never add anything of your own.
-Write as the speaker: first person, their words, addressing the agent as "you". Never "the speaker" or "the user".
+Write as the speaker: first person, their words, addressing the agent as "you". Never "the speaker" or "the user". Keep their mood: a thought stays a thought, a requirement stays a requirement — write an instruction only where they gave one.
 Keep everything they said, reasoning and specifics included — this is a rewrite, not a summary. Length tracks how much they said.
 Fix speech-to-text errors and filler. Keep names, paths and technical terms exactly as spoken. Where they changed their mind, keep only what they settled on.
-One thought is a plain paragraph. Several points are a numbered list, one number per point — a point is one idea, not one sentence.
+One thought is a plain paragraph. Several points are a numbered list, one number per point, in the order they said them — a point is one idea, not one sentence.
 If they said a point number ("on 5.1"), keep it as "Re 5.1:". Never invent one.
-Any instruction about whether to act — hold off, plan first, get my consent, explore don't implement, go ahead — goes last, on its own line at the end, wherever they said it.
 No preamble, no summary, no meta-commentary.
 An <instructions> block is addressed to you: follow it for this version, never echo it into the output.
-On a refine pass, fold new material into the point it belongs to and output the whole updated version, keeping the act-or-hold line last.`;
+On a refine pass, fold new material into the point it belongs to and output the whole updated version.`;
 
 // The system prompt is fixed unless config.yaml overrides it wholesale.
 function rephraseSystemPrompt() {
