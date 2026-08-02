@@ -335,8 +335,8 @@ body {
      read as visual noise/moiré instead of a grid. */
   background-image:
     radial-gradient(120% 90% at 15% 0%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 60%),
-    linear-gradient(to right, color-mix(in srgb, var(--accent) 11%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in srgb, var(--accent) 11%, transparent) 1px, transparent 1px);
+    linear-gradient(to right, color-mix(in srgb, var(--accent) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--accent) 6%, transparent) 1px, transparent 1px);
   background-size: 100% 100%, 16px 16px, 16px 16px;
   background-color: #04070d;
   /* static inner shadow for depth — no audio-reactive glow (was flickering
@@ -355,15 +355,22 @@ body {
   flex-direction: column;
   gap: 8px;
 }
+/* Stacked, the column wrapper must not exist as a box: hiding the input would
+   leave it holding a flex:1 share of the height with only the 78px instruction
+   strip inside it, so the tabs would swap a tall input for a tall empty gap.
+   display:contents lifts input + instruction into .boxes alongside the output,
+   so whichever pane is showing gets the space and the strip stays put. */
 .box-col {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: contents;
 }
 #wrapInstruction {
-  flex: 0 0 78px; /* short strip when stacked; a share of the column when wide */
+  /* a fixed share of the height, not a fixed pixel strip: at half-screen the
+     window is tall and 78px read as a slot rather than a box you dictate into.
+     20% matches the ratio the wide layout gives it, with the old 78px kept as a
+     floor so a short side-docked window still shows a usable couple of lines. */
+  flex: 0 0 20%;
+  min-height: 78px;
+  order: 1; /* last in both tabs — same place whether input or output is showing */
 }
 
 /* Which box dictation lands in. Deliberately loud — sending speech to the wrong
@@ -422,8 +429,15 @@ body {
   .boxes {
     flex-direction: row;
   }
+  /* the wrapper becomes a real box again — the left column of the two-up */
+  .box-col {
+    min-height: 0;
+    flex-direction: column;
+    gap: 8px;
+  }
   .box-col,
   #wrapRephrased {
+    display: flex;
     flex: 1;
   }
   #wrapTranscript {
@@ -451,8 +465,11 @@ body {
   color: color-mix(in srgb, var(--header) 86%, var(--accent));
   font-size: 16px;
   line-height: 1.7;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-weight: 300;
+  font-family: "Exo", "Ubuntu Sans", system-ui, sans-serif;
+  /* 400, not the 300 the monospace carried: Exo's light weight is noticeably
+     thinner than JetBrains Mono's at the same number and washes out on the dark
+     panel. */
+  font-weight: 400;
   -webkit-font-smoothing: antialiased;
   user-select: text;
   outline: none;
