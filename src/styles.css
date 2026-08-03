@@ -463,7 +463,7 @@ body {
   border: none;
   /* bright, slight cyan lean — no text glow (was causing eyestrain). */
   color: color-mix(in srgb, var(--header) 86%, var(--accent));
-  font-size: 16px;
+  font-size: 18px;
   line-height: 1.7;
   font-family: "Exo", "Ubuntu Sans", system-ui, sans-serif;
   /* 400, not the 300 the monospace carried: Exo's light weight is noticeably
@@ -479,12 +479,6 @@ body {
 #instruction::placeholder {
   color: var(--muted);
 }
-/* the instruction box is a short strip — smaller type so a couple of lines fit */
-#instruction {
-  font-size: 13.5px;
-  line-height: 1.55;
-}
-
 .transcript-toolbar {
   display: flex;
   align-items: center;
