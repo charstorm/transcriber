@@ -28,7 +28,7 @@
         <button class="icon-btn" id="btnShortcuts" title="Shortcuts" aria-label="Shortcuts">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M10 13h.01M14 13h.01M18 13h.01M8 17h8"/></svg>
         </button>
-        <button class="icon-btn close" id="btnClose" title="Close" aria-label="Close">
+        <button class="icon-btn close" id="btnClose" title="Close (pastes / copies if enabled)" aria-label="Close">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
       </div>
@@ -38,36 +38,8 @@
     <section class="view" id="viewTranscript">
       <div class="api-warn hidden" id="apiWarn"></div>
       <div class="paste-warn hidden" id="pasteWarn"></div>
-      <!-- Pane tabs, for the narrow window only — wide shows all three boxes at
-           once and hides these. Dictation lands in whichever box is SELECTED
-           ("select input" / "select output" / "select instruction"). -->
-      <div class="tabbar" role="tablist">
-        <button class="tab active" id="tabTranscript" role="tab">
-          Input<span class="tab-flag hidden" id="tabTranscriptFlag">new</span>
-        </button>
-        <button class="tab" id="tabRephrased" role="tab">
-          Output<span class="tab-flag hidden" id="tabRephrasedFlag">stale</span>
-        </button>
-      </div>
-      <!-- Wide: input over instruction on the left, output on the right.
-           Narrow: one column, input/output tabbed, instruction always visible. -->
-      <div class="boxes">
-        <div class="box-col">
-          <div class="ta-wrap selected" id="wrapTranscript">
-            <span class="box-label">Input</span>
-            <textarea id="transcript" spellcheck="false" placeholder="Transcription will appear here…"></textarea>
-          </div>
-          <div class="ta-wrap" id="wrapInstruction">
-            <span class="box-label">Instruction</span>
-            <textarea id="instruction" spellcheck="false" placeholder="Say “select instruction”, then how the rewrite should read. Applies to every rephrase until cleared."></textarea>
-          </div>
-        </div>
-        <div class="ta-wrap pane-hidden" id="wrapRephrased">
-          <span class="box-label">
-            Output<span class="box-flag hidden" id="boxRephrasedFlag">stale</span>
-          </span>
-          <textarea id="rephrased" spellcheck="false" placeholder="Say “rephrase input” to restructure the transcript here…"></textarea>
-        </div>
+      <div class="ta-wrap">
+        <textarea id="transcript" spellcheck="false" placeholder="Transcription will appear here…"></textarea>
       </div>
       <div class="transcript-toolbar">
         <button class="pill" id="btnToggleRec">
@@ -101,10 +73,10 @@
         <input type="checkbox" id="cfgAutoRecord" /> Auto-record on launch
       </label>
       <label class="check">
-        <input type="checkbox" id="cfgAutoPaste" /> Auto-paste on “strike and reload”
+        <input type="checkbox" id="cfgAutoCopy" /> Auto-copy transcript on close
       </label>
-      <label>Rephrase model
-        <input type="text" id="cfgRephraseModel" placeholder="google/gemini-3.1-flash-lite" />
+      <label class="check">
+        <input type="checkbox" id="cfgAutoPaste" /> Auto-paste transcript into focused app on close
       </label>
       <div class="form-actions">
         <button class="mini-btn" id="btnConfigBack">Back</button>
@@ -118,10 +90,10 @@
       <h2>Shortcuts</h2>
       <ul class="shortcuts">
         <li><kbd>Ctrl</kbd>+<kbd>M</kbd><span>Start / stop recording</span></li>
-        <li><kbd>Ctrl</kbd>+<kbd>C</kbd><span>Copy (output if fresh, else input)</span></li>
-        <li><kbd>Ctrl</kbd>+<kbd>X</kbd><span>Copy, then clear input + output</span></li>
-        <li><kbd>Ctrl</kbd>+<kbd>L</kbd><span>Clear the selected box</span></li>
-        <li><kbd>Esc</kbd><span>Hide the window (delivers nothing)</span></li>
+        <li><kbd>Ctrl</kbd>+<kbd>C</kbd><span>Copy transcript</span></li>
+        <li><kbd>Ctrl</kbd>+<kbd>X</kbd><span>Cut transcript</span></li>
+        <li><kbd>Ctrl</kbd>+<kbd>L</kbd><span>Clear transcript</span></li>
+        <li><kbd>Esc</kbd><span>Paste / copy (if enabled) &amp; quit</span></li>
       </ul>
       <p class="hint">Shortcuts are in-app only and fixed for now. Configurable / global shortcuts are planned.</p>
       <div class="form-actions">

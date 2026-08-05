@@ -12,10 +12,10 @@ model: mistralai/voxtral-small-24b-2507
 # with exponential backoff (1s, 2s, 4s, 8s …) between attempts.
 max_retries: 1
 
-# Auto-paste: allow `strike and reload` to paste into whatever app is focused.
-# Linux/Wayland only — needs `wl-copy` (wl-clipboard), `ydotool`, and a running
-# `ydotoold`. If those are missing, a warning is shown and nothing is pasted. Set
-# false to disable. Esc and the close button never deliver anything.
+# Auto-paste: on close (Esc / close button), paste the transcript into whatever
+# app was focused before. Linux/Wayland only — needs `wl-copy` (wl-clipboard),
+# `ydotool`, and a running `ydotoold`. If those are missing, a warning is shown
+# and the app falls back to plain clipboard copy. Set false to disable.
 auto_paste: true
 # Key sequence ydotool presses to paste. ctrl+shift+v works in terminals AND
 # most GUI apps; plain ctrl+v is a no-op in terminals.
@@ -38,42 +38,11 @@ paste_delay_ms: 800
 #
 # Providing this key REPLACES the built-in default (strike and reload). Omit it
 # to keep the default. Add multiple entries to map several phrases to an action.
-#   rephrase = rewrite the input into cleaner, better-structured notes in the
-#           output box. Say it again after dictating more and it improves that
-#           draft rather than starting over. Whatever is in the instruction box
-#           steers every pass, and keeps applying until you clear it.
-#   select_input / select_output / select_instruction = choose the box dictation
-#           lands in. "switch to X" and "jump to X" say the same thing.
-#   clear_box = wipe the selected box, leaving the other two alone.
-#   switch_window = press the window-switcher key (alt+Tab) so you can move to
-#           the app you're dictating for hands-free. Pastes nothing, clears
-#           nothing, and recording continues behind the window that comes up.
 commands:
   - action: paste_enter_clear
     say: strike and reload
-  - action: rephrase
-    say: rephrase input
-  - action: rephrase
-    say: rephrase the input
-  - action: clear_display
-    say: clear display
-  - action: switch_window
-    say: switch window
 # Key ydotool presses after the paste for paste_enter_clear (ydotool key name).
 enter_key: Enter
-# Key ydotool presses for switch_window. Change it if your compositor binds the
-# window switcher to something other than alt+Tab.
-switch_window_key: alt+Tab
-
-# ── rephrase ─────────────────────────────────────────────────────────────────
-# Model used by the `rephrase` command. Must be a chat LLM (not an audio
-# transcription model). Reasoning is disabled and temperature pinned to 0.01.
-rephrase_model: google/gemini-3.1-flash-lite
-
-# Optional: replace the rephrase system prompt wholesale, to retune the output
-# sections without rebuilding. Omit to use the built-in prompt.
-# rephrase_prompt: |
-#   You restructure dictated speech into …
 
 # On-disk format for the debug audio dumps (~/.cache/transcriber/dumps/). These
 # are throwaway captures of each utterance for manual quality inspection.

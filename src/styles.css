@@ -264,68 +264,11 @@ body {
   display: none;
 }
 
-/* ── pane tabs (Transcript / Rephrased) ───────────────────────
-   Deliberately small: this sits above the text box in a narrow side-docked
-   window, so it must cost as little vertical space as possible while staying
-   an easy click target. */
-.tabbar {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
-}
-.tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-  background: transparent;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
-}
-.tab:hover {
-  color: var(--body);
-  border-color: var(--border);
-}
-.tab.active {
-  color: color-mix(in srgb, var(--header) 86%, var(--accent));
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
-}
-/* small marker on a tab: "new" (unseen transcript text landed while you were on
-   the other tab) or "stale" (transcript has moved on since this was generated) */
-.tab-flag {
-  padding: 1px 5px;
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  color: var(--bg);
-  background: var(--accent);
-  border-radius: 999px;
-}
-.tab-flag.hidden {
-  display: none;
-}
-/* The inactive pane. Qualified with .ta-wrap on purpose: the .ta-wrap rule below
-   sets display:flex and would otherwise win on source order at equal specificity. */
-.ta-wrap.pane-hidden {
-  display: none;
-}
-
 /* ── transcript view (controls BELOW the transcript) ──────────── */
 .ta-wrap {
   flex: 1;
   min-height: 0;
   display: flex;
-  /* column so the box label stacks above its textarea instead of beside it */
-  flex-direction: column;
-  gap: 4px;
   padding: 7px 8px;
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   /* flat near-black panel, no gradient sweep — a very faint radial glow
@@ -335,8 +278,8 @@ body {
      read as visual noise/moiré instead of a grid. */
   background-image:
     radial-gradient(120% 90% at 15% 0%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 60%),
-    linear-gradient(to right, color-mix(in srgb, var(--accent) 6%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in srgb, var(--accent) 6%, transparent) 1px, transparent 1px);
+    linear-gradient(to right, color-mix(in srgb, var(--accent) 11%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--accent) 11%, transparent) 1px, transparent 1px);
   background-size: 100% 100%, 16px 16px, 16px 16px;
   background-color: #04070d;
   /* static inner shadow for depth — no audio-reactive glow (was flickering
@@ -344,117 +287,7 @@ body {
   box-shadow: inset 0 4px 26px rgba(0, 0, 0, 0.55);
 }
 
-/* ── three-box layout ─────────────────────────────────────────
-   Narrow (default): one column — input/output tabbed, instruction a short strip
-   below. Wide: input over instruction on the left, output on the right, all
-   three visible and the tabs gone. */
-.boxes {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-/* Stacked, the column wrapper must not exist as a box: hiding the input would
-   leave it holding a flex:1 share of the height with only the 78px instruction
-   strip inside it, so the tabs would swap a tall input for a tall empty gap.
-   display:contents lifts input + instruction into .boxes alongside the output,
-   so whichever pane is showing gets the space and the strip stays put. */
-.box-col {
-  display: contents;
-}
-#wrapInstruction {
-  /* a fixed share of the height, not a fixed pixel strip: at half-screen the
-     window is tall and 78px read as a slot rather than a box you dictate into.
-     20% matches the ratio the wide layout gives it, with the old 78px kept as a
-     floor so a short side-docked window still shows a usable couple of lines. */
-  flex: 0 0 20%;
-  min-height: 78px;
-  order: 1; /* last in both tabs — same place whether input or output is showing */
-}
-
-/* Which box dictation lands in. Deliberately loud — sending speech to the wrong
-   box is the main way this layout can bite, so the selected one is unmistakable
-   (brighter border + a ring) rather than the others being dimmed. */
-.ta-wrap.selected {
-  border-color: var(--accent);
-  box-shadow: inset 0 4px 26px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--accent-line);
-}
-
-/* Box names. Hidden when the tabs are doing the labelling (narrow), except on
-   the instruction box, which has no tab. */
-.box-label {
-  display: none;
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--body);
-}
-.ta-wrap.selected .box-label {
-  color: var(--accent);
-}
-#wrapInstruction .box-label {
-  display: block;
-}
-/* "stale": the output no longer reflects everything said, so delivery refuses to
-   send it. Alert-coloured because it blocks an action, unlike the accent flags. */
-.box-flag {
-  margin-left: 6px;
-  padding: 1px 5px;
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  color: #fff;
-  background: var(--danger);
-  border-radius: 999px;
-}
-.box-flag.hidden {
-  display: none;
-}
-/* brief flash when a delivery is refused — the status line can be overwritten by
-   the next VAD event, so the box itself carries the rejection */
-.ta-wrap.warn {
-  border-color: var(--danger);
-  box-shadow: inset 0 4px 26px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--alert-line);
-}
-
-@media (min-width: 900px) {
-  .tabbar {
-    display: none;
-  }
-  .box-label {
-    display: block;
-  }
-  .boxes {
-    flex-direction: row;
-  }
-  /* the wrapper becomes a real box again — the left column of the two-up */
-  .box-col {
-    min-height: 0;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .box-col,
-  #wrapRephrased {
-    display: flex;
-    flex: 1;
-  }
-  #wrapTranscript {
-    flex: 4; /* input ~80% of the left column, instruction ~20% */
-  }
-  #wrapInstruction {
-    flex: 1;
-  }
-  /* every box is visible here — the tab-driven hide only applies when stacked */
-  .ta-wrap.pane-hidden {
-    display: flex;
-  }
-}
-
-#transcript,
-#rephrased,
-#instruction {
+#transcript {
   flex: 1;
   min-height: 0;
   width: 100%;
@@ -463,22 +296,18 @@ body {
   border: none;
   /* bright, slight cyan lean — no text glow (was causing eyestrain). */
   color: color-mix(in srgb, var(--header) 86%, var(--accent));
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1.7;
-  font-family: "Exo", "Ubuntu Sans", system-ui, sans-serif;
-  /* 400, not the 300 the monospace carried: Exo's light weight is noticeably
-     thinner than JetBrains Mono's at the same number and washes out on the dark
-     panel. */
-  font-weight: 400;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 300;
   -webkit-font-smoothing: antialiased;
   user-select: text;
   outline: none;
 }
-#transcript::placeholder,
-#rephrased::placeholder,
-#instruction::placeholder {
+#transcript::placeholder {
   color: var(--muted);
 }
+
 .transcript-toolbar {
   display: flex;
   align-items: center;
