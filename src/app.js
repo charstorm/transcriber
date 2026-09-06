@@ -416,17 +416,34 @@ function refreshStatus() {
 }
 
 // ── transcript helpers ──────────────────────────────────────────────────────
+// Each appended utterance is followed by a "~~~" marker line — a visible cue in
+// the raw textarea for where one recording ended and the next began. Markers
+// stay in transcriptEl.value and in the localStorage draft (crash recovery
+// should still show them); they're only stripped at the moment text leaves the
+// app (copy/paste/auto-paste) — see stripMarkers().
+const TRANSCRIPT_MARKER = "~~~";
+
 function appendTranscript(text) {
   const t = text.trim();
   if (!t) return;
   const existing = transcriptEl.value.trim();
-  transcriptEl.value = existing ? existing + "\n" + t : t;
+  transcriptEl.value = (existing ? existing + "\n" : "") + t + "\n" + TRANSCRIPT_MARKER;
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
   localStorage.setItem(TRANSCRIPT_KEY, transcriptEl.value);
 }
 
+// Strip marker lines (exactly "~~~", ignoring surrounding whitespace) from a
+// string, joining the surrounding utterance text back together cleanly — used
+// everywhere the transcript is sent/copied OUT of the app.
+function stripMarkers(text) {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== TRANSCRIPT_MARKER)
+    .join("\n");
+}
+
 async function copyTranscript() {
-  const text = transcriptEl.value.trim();
+  const text = stripMarkers(transcriptEl.value).trim();
   if (!text) return false;
   await writeText(text);
   return true;
@@ -521,7 +538,7 @@ async function runCommand(cmd) {
 // keeps recording. (Whether the paste lands in another app depends on which
 // window has focus; managing that is the deferred foreground/background work.)
 async function pasteEnterClear() {
-  const text = transcriptEl.value.trim();
+  const text = stripMarkers(transcriptEl.value).trim();
   if (!text) {
     log("paste_enter_clear: canvas empty, nothing to send");
     return;
@@ -1035,7 +1052,7 @@ function toggleRecording() {
 // Hiding the window here is also what yields focus back so the keystroke lands in
 // the right app — for Esc that hide is the end state; for X we close after.
 async function pasteTranscript() {
-  const text = transcriptEl.value.trim();
+  const text = stripMarkers(transcriptEl.value).trim();
   log(`done: ${text.length} chars, autoPaste=${config.autoPaste}, pasteAvailable=${pasteAvailable}, autoCopy=${config.autoCopy}`);
   if (text && config.autoPaste && pasteAvailable) {
     try {
