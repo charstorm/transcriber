@@ -138,6 +138,11 @@ function buildSystemPrompt(instructions) {
 // Silero VAD tuning. v5 frame = 512 samples @16kHz ≈ 32ms.
 const FRAME_MS = 32;
 
+// Max number of pipeline dots shown (see "pipeline dots" section below). Once
+// there are more jobs than this, the oldest falls off the right end. A single
+// top-level constant so changing it is a one-line edit.
+const PIPELINE_SIZE = 10;
+
 // Defaults are expressed in milliseconds (converted to frame counts when the
 // VAD is created) and are overridable via ~/.config/transcriber/config.yaml.
 // Matched to reshka's hardcoded VAD constants (reshka_tui.py:122-125) so the two
@@ -195,9 +200,8 @@ const transcriptEl = $("transcript");
 const recLabel = $("recLabel");
 const btnToggleRec = $("btnToggleRec");
 
-const statActive = $("statActive");
-const numActive = $("numActive");
-const numDone = $("numDone");
+const durBarFill = $("durBarFill");
+const pipelineEl = $("pipeline");
 
 // human-readable label shown next to the visualizer per pipeline state
 const STATUS_LABELS = {
@@ -208,37 +212,50 @@ const STATUS_LABELS = {
   error: "Transcription failed",
 };
 
-// ── live audio-energy visualizer ──────────────────────────────────────────────
-// Bars are driven by the real per-frame RMS energy (via VAD onFrameProcessed),
-// scrolling left→right, so the viz actually reflects the captured audio.
-const vizBars = Array.from(document.querySelectorAll(".viz i"));
-const vizHist = new Array(vizBars.length).fill(0);
+// ── duration bar ─────────────────────────────────────────────────────────────
+// Fills left→right while the user is actively speaking (between VAD
+// onSpeechStart and onSpeechEnd/onVADMisfire), reaching 100% at DUR_CAP_MS of
+// speech and then freezing there — it never stops the recording, it just stops
+// visually advancing past the cap. Driven by rAF (not setInterval) so it stays
+// smooth; started on onSpeechStart, cancelled (and reset to empty) on speech
+// end/misfire.
+const DUR_CAP_MS = 120000; // 2:00
+let durBarStart = null;
+let durBarRaf = null;
 
-function frameRms(frame) {
-  let sum = 0;
-  for (let i = 0; i < frame.length; i++) sum += frame[i] * frame[i];
-  return Math.sqrt(sum / frame.length);
+function durBarTick() {
+  const elapsed = performance.now() - durBarStart;
+  const pct = Math.min(100, (elapsed / DUR_CAP_MS) * 100);
+  if (durBarFill) durBarFill.style.width = pct + "%";
+  durBarRaf = requestAnimationFrame(durBarTick);
 }
-function renderViz(rms) {
-  vizHist.push(rms);
-  vizHist.shift();
-  for (let i = 0; i < vizBars.length; i++) {
-    const h = Math.max(6, Math.min(100, Math.sqrt(vizHist[i]) * 260));
-    vizBars[i].style.height = h + "%";
+function startDurBar() {
+  if (durBarRaf !== null) cancelAnimationFrame(durBarRaf);
+  durBarStart = performance.now();
+  durBarRaf = requestAnimationFrame(durBarTick);
+}
+function stopDurBar() {
+  if (durBarRaf !== null) cancelAnimationFrame(durBarRaf);
+  durBarRaf = null;
+  durBarStart = null;
+  if (durBarFill) durBarFill.style.width = "0%";
+}
+
+// ── pipeline dots ─────────────────────────────────────────────────────────────
+// One dot per recent transcription job, newest on the LEFT (index 0), oldest
+// falling off the right past PIPELINE_SIZE entries. States: recording (being
+// captured, not yet sent) -> pending (sent, awaiting/retrying the API) ->
+// done (API call resolved) or error (all retries failed).
+let pipeline = []; // [{ seq, state }]
+
+function renderPipeline() {
+  if (!pipelineEl) return;
+  pipelineEl.innerHTML = "";
+  for (const job of pipeline) {
+    const dot = document.createElement("span");
+    dot.className = "pdot " + job.state;
+    pipelineEl.appendChild(dot);
   }
-}
-function resetViz() {
-  vizHist.fill(0);
-  for (const b of vizBars) b.style.height = "20%";
-}
-
-// ── queue / in-flight indicator ───────────────────────────────────────────────
-// Two fixed-width slots — counts live in tabular-nums spans so the slots never
-// change shape as numbers update. Both are always shown (0 is fine).
-function updateQueue() {
-  if (numActive) numActive.textContent = String(activeApiCount);
-  if (numDone) numDone.textContent = String(completedTotal);
-  if (statActive) statActive.classList.toggle("busy", activeApiCount > 0);
 }
 
 // ── config persistence ──────────────────────────────────────────────────────
@@ -393,7 +410,6 @@ function setStatus(state) {
 }
 
 function refreshStatus() {
-  updateQueue();
   if (!isRecording) return setStatus("idle");
   if (activeApiCount > 0) return setStatus("processing");
   setStatus("listening");
@@ -615,7 +631,8 @@ function resetSession() {
   completedTotal = 0;
   nextToFlush = 0;
   pendingResults.clear();
-  updateQueue();
+  pipeline = [];
+  renderPipeline();
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -815,6 +832,11 @@ async function transcribeAudio(float32, seq) {
   if (cleaned === null) {
     // all attempts exhausted — settle empty so later utterances still flush
     log(`transcription FAILED [#${seq}] after ${maxRetries + 1} attempts: ${String(lastErr)}`);
+    const job = pipeline.find((j) => j.seq === seq);
+    if (job) {
+      job.state = "error";
+      renderPipeline();
+    }
     settleOrdered(seq, "");
     setStatus("error");
     setTimeout(refreshStatus, 2500);
@@ -828,6 +850,11 @@ async function transcribeAudio(float32, seq) {
     log(`response EMPTY [#${seq}] — model returned no text`);
   }
   completedTotal++;
+  const job = pipeline.find((j) => j.seq === seq);
+  if (job) {
+    job.state = "done";
+    renderPipeline();
+  }
   settleOrdered(seq, cleaned);
   refreshStatus();
 }
@@ -868,21 +895,31 @@ async function acquireMic() {
       onSpeechStart: () => {
         log("speech start");
         setStatus("speaking");
+        pipeline.unshift({ seq: null, state: "recording" });
+        pipeline.length = Math.min(pipeline.length, PIPELINE_SIZE);
+        renderPipeline();
+        startDurBar();
       },
       onSpeechEnd: (audio) => {
         const ms = Math.round((audio.length / 16000) * 1000);
         const seq = capturedTotal; // 0-based capture order, drives ordered output
         capturedTotal++;
         log(`speech end — ${ms}ms (${audio.length} samples @16kHz), captured #${capturedTotal}`);
+        if (pipeline[0] && pipeline[0].state === "recording") {
+          pipeline[0].seq = seq;
+          pipeline[0].state = "pending";
+        }
+        renderPipeline();
+        stopDurBar();
         refreshStatus();
         transcribeAudio(audio, seq);
       },
       onVADMisfire: () => {
         log("VAD misfire (too short)");
+        if (pipeline[0] && pipeline[0].state === "recording") pipeline.shift();
+        renderPipeline();
+        stopDurBar();
         refreshStatus();
-      },
-      onFrameProcessed: (_probs, frame) => {
-        if (frame) renderViz(frameRms(frame));
       },
     });
     log(`[load] VAD ready in ${Math.round(performance.now() - vt0)}ms`);
@@ -983,7 +1020,7 @@ function stopRecording() {
   recLabel.textContent = "Start";
   btnToggleRec.classList.remove("active");
   log("recording stopped");
-  resetViz();
+  stopDurBar();
   setStatus("idle");
 }
 
@@ -1070,7 +1107,7 @@ async function onWake() {
   if (transcriptEl.value.trim())
     log(`wake: ${transcriptEl.value.length} undelivered chars retained on canvas`);
   resetSession();
-  resetViz();
+  stopDurBar();
   if (!hasApiKey()) {
     showView("Config");
     return;
@@ -1217,7 +1254,8 @@ async function init() {
   wire();
   // wake on a second launch (resident single-instance — see Rust callback)
   getCurrentWindow().listen("wake", onWake).catch((e) => log("wake listen failed:", String(e)));
-  resetViz();
+  renderPipeline();
+  stopDurBar();
   setStatus("idle");
   updateApiWarning();
   log(`[load] UI wired @ ${since()}`);
