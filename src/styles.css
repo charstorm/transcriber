@@ -145,25 +145,47 @@ body {
   place-items: center;
   width: 28px;
   height: 28px;
-  border: 1px solid var(--border-soft);
-  background: color-mix(in srgb, var(--panel) 45%, transparent);
+  position: relative;
+  z-index: 0;
+  /* background IS the frame/border color now — clip-path clips the whole box
+     (including any border), so a plain `border` never draws along the
+     diagonal corner cuts. The visible "frame" comes from this background
+     plus the inset ::before below (see comment there). */
+  background: var(--border-soft);
   color: var(--text-dim);
   cursor: pointer;
   clip-path: polygon(0 0, calc(100% - 5px) 0, 100% 5px, 100% 100%, 5px 100%, 0 calc(100% - 5px));
-  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.06s ease,
+  transition: background 0.15s, color 0.15s, transform 0.06s ease,
     filter 0.06s ease;
 }
 
+/* inset "fill" layer, sitting behind the icon (z-index:-1) but in front of
+   the parent's own background — this is what makes the frame color show
+   along every edge, including the diagonal corner cuts. */
+.icon-btn::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  clip-path: polygon(0 0, calc(100% - 5px) 0, 100% 5px, 100% 100%, 5px 100%, 0 calc(100% - 5px));
+  background: color-mix(in srgb, var(--panel) 45%, transparent);
+  transition: background 0.15s;
+}
+
 .icon-btn:hover {
-  background: color-mix(in srgb, var(--accent) 16%, var(--panel-b));
-  border-color: var(--accent-line);
+  background: var(--accent-line);
   color: var(--header);
+}
+.icon-btn:hover::before {
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel-b));
 }
 
 .icon-btn.close:hover {
-  background: color-mix(in srgb, var(--alert) 22%, var(--panel-b));
-  border-color: var(--alert-line);
+  background: var(--alert-line);
   color: #fff;
+}
+.icon-btn.close:hover::before {
+  background: color-mix(in srgb, var(--alert) 22%, var(--panel-b));
 }
 
 /* ── status dot ───────────────────────────────────────────── */
@@ -344,11 +366,27 @@ body {
 #durBar {
   display: inline-block;
   position: relative;
+  z-index: 0;
   width: 300px;
   height: 16px;
+  /* replaces the old 1px border for layout purposes — #durBarFill is sized
+     to 100%/0-100% of this content box, so it needs the same 1px inset that
+     border-box sizing used to give it for free when the border existed. */
+  padding: 1px;
   flex-shrink: 0;
   overflow: hidden;
-  border: 1px solid var(--accent-line);
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+  /* background IS the frame/border color now — clip-path clips the whole
+     box (including any border), so a plain `border` never draws along the
+     diagonal corner cuts. The visible "frame" comes from this background
+     plus the inset ::before below. */
+  background: var(--accent-line);
+}
+#durBar::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
   clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
   background: color-mix(in srgb, var(--accent) 5%, color-mix(in srgb, var(--panel) 45%, transparent));
 }
@@ -414,12 +452,17 @@ body {
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  border: 1px solid var(--accent-line);
+  position: relative;
+  z-index: 0;
   clip-path: polygon(
     var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)),
     calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut)
   );
-  background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 20%, var(--panel-b)), color-mix(in srgb, var(--accent) 6%, var(--panel-b)));
+  /* background IS the frame/border color now — clip-path clips the whole
+     box (including any border), so a plain `border` never draws along the
+     diagonal corner cuts. The visible "frame" comes from this background
+     plus the inset ::before below, which carries the actual fill gradient. */
+  background: var(--accent-line);
   color: var(--header);
   font-family: "Exo", system-ui, sans-serif;
   font-size: 12px;
@@ -427,30 +470,50 @@ body {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s,
+  transition: background 0.15s, color 0.15s,
     transform 0.06s ease, filter 0.06s ease;
 }
+.pill::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  clip-path: polygon(
+    var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)),
+    calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut)
+  );
+  background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 20%, var(--panel-b)), color-mix(in srgb, var(--accent) 6%, var(--panel-b)));
+  transition: background 0.15s;
+}
 .pill:hover {
+  background: var(--accent);
+}
+.pill:hover::before {
   background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 34%, var(--panel-b)), color-mix(in srgb, var(--accent) 12%, var(--panel-b)));
-  border-color: var(--accent);
 }
 .pill.solid {
-  background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 80%, #fff), color-mix(in srgb, var(--accent) 55%, var(--panel)));
+  background: var(--accent);
   color: #06121a;
-  border-color: var(--accent);
 }
-.pill.solid:hover {
+.pill.solid::before {
+  background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 80%, #fff), color-mix(in srgb, var(--accent) 55%, var(--panel)));
+}
+.pill.solid:hover::before {
   background: linear-gradient(150deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #fff));
 }
 /* recording-active toggle goes alert-red */
 .pill.active {
-  background: linear-gradient(150deg, color-mix(in srgb, var(--alert) 26%, var(--panel-b)), color-mix(in srgb, var(--alert) 8%, var(--panel-b)));
+  background: var(--alert-line);
   color: color-mix(in srgb, var(--alert) 55%, #fff);
-  border-color: var(--alert-line);
+}
+.pill.active::before {
+  background: linear-gradient(150deg, color-mix(in srgb, var(--alert) 26%, var(--panel-b)), color-mix(in srgb, var(--alert) 8%, var(--panel-b)));
 }
 .pill.active:hover {
+  background: var(--alert);
+}
+.pill.active:hover::before {
   background: linear-gradient(150deg, color-mix(in srgb, var(--alert) 38%, var(--panel-b)), color-mix(in srgb, var(--alert) 14%, var(--panel-b)));
-  border-color: var(--alert);
 }
 .rec-icon {
   width: 8px;
@@ -465,22 +528,36 @@ body {
 
 .mini-btn {
   padding: 7px 13px;
-  /* faint always-on cyan edge (was neutral --border-soft) so the whole toolbar
-     reads as one glowing HUD, not just the red STOP control. */
-  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  position: relative;
+  z-index: 0;
   clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
-  background: color-mix(in srgb, var(--accent) 5%, color-mix(in srgb, var(--panel) 45%, transparent));
+  /* background IS the frame/border color now (was a plain `border`, which a
+     clip-path never draws along its diagonal corner cuts) — faint always-on
+     cyan edge so the whole toolbar reads as one glowing HUD, not just the
+     red STOP control. The actual fill lives on the inset ::before below. */
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
   color: var(--text-dim);
   font-family: "Exo", system-ui, sans-serif;
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: color 0.15s, background 0.15s, transform 0.06s ease, filter 0.06s ease;
+}
+.mini-btn::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+  background: color-mix(in srgb, var(--accent) 5%, color-mix(in srgb, var(--panel) 45%, transparent));
+  transition: background 0.15s;
 }
 .mini-btn:hover {
   color: var(--header);
-  border-color: var(--accent-line);
+  background: var(--accent-line);
+}
+.mini-btn:hover::before {
   background: color-mix(in srgb, var(--accent) 14%, var(--panel-b));
 }
 
