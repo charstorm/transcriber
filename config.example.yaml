@@ -44,6 +44,11 @@ commands:
 # Key ydotool presses after the paste for paste_enter_clear (ydotool key name).
 enter_key: Enter
 
+# Character (or short string) prefixed to each utterance in the transcript
+# textarea, e.g. "➤ hello there". Stripped (with its trailing space) before the
+# text is copied/pasted out.
+# transcript_marker: "➤"
+
 # On-disk format for the debug audio dumps (~/.cache/transcriber/dumps/). These
 # are throwaway captures of each utterance for manual quality inspection.
 #   wav   raw PCM16 — large, but needs no external tools.

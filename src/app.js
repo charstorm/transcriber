@@ -99,6 +99,11 @@ const DEFAULTS = {
   // on-disk format for audio dumps. See DUMP_FORMATS. `wav` needs no external
   // tools; anything else is transcoded by ffmpeg in Rust.
   dumpAudioFormat: "opus",
+  // single character (or short string) prefixed to each appended utterance in
+  // the transcript textarea — a visible cue for where one utterance begins.
+  // Stripped (along with its trailing space) before text leaves the app — see
+  // stripMarkers(). config.yaml-only setting (no UI field).
+  transcriptMarker: "➤",
 };
 
 // Byte-identical copy of reshka's _DEFAULT_SYSTEM_PROMPT (reshka_tui.py:128-141).
@@ -308,6 +313,7 @@ async function loadFileConfig() {
   if (str(file.paste_key)) config.pasteKey = str(file.paste_key);
   if (num(file.paste_delay_ms) !== undefined) config.pasteDelayMs = Math.max(0, Math.round(num(file.paste_delay_ms)));
   if (str(file.enter_key)) config.enterKey = str(file.enter_key);
+  if (str(file.transcript_marker)) config.transcriptMarker = str(file.transcript_marker);
   if (str(file.dump_audio_format)) {
     const fmt = str(file.dump_audio_format).toLowerCase();
     if (DUMP_FORMATS.includes(fmt)) config.dumpAudioFormat = fmt;
@@ -363,7 +369,7 @@ async function loadFileConfig() {
     model: config.model, maxRetries: config.maxRetries,
     autoPaste: config.autoPaste, pasteKey: config.pasteKey, pasteDelayMs: config.pasteDelayMs,
     enterKey: config.enterKey, commands: config.commands.map((c) => c.emit || c.say),
-    dumpAudioFormat: config.dumpAudioFormat,
+    dumpAudioFormat: config.dumpAudioFormat, transcriptMarker: config.transcriptMarker,
     vad: vadParams, configInstructions: config.configInstructions.length,
   }));
 }
@@ -416,29 +422,34 @@ function refreshStatus() {
 }
 
 // ── transcript helpers ──────────────────────────────────────────────────────
-// Each appended utterance is followed by a "~~~" marker line — a visible cue in
-// the raw textarea for where one recording ended and the next began. Markers
-// stay in transcriptEl.value and in the localStorage draft (crash recovery
-// should still show them); they're only stripped at the moment text leaves the
-// app (copy/paste/auto-paste) — see stripMarkers().
-const TRANSCRIPT_MARKER = "~~~";
+// Each appended utterance is prefixed with config.transcriptMarker + " " — a
+// visible cue in the raw textarea for where one utterance begins. Markers stay
+// in transcriptEl.value and in the localStorage draft (crash recovery should
+// still show them); they're only stripped at the moment text leaves the app
+// (copy/paste/auto-paste) — see stripMarkers().
 
 function appendTranscript(text) {
   const t = text.trim();
   if (!t) return;
   const existing = transcriptEl.value.trim();
-  transcriptEl.value = (existing ? existing + "\n" : "") + t + "\n" + TRANSCRIPT_MARKER;
+  transcriptEl.value = (existing ? existing + "\n" : "") + config.transcriptMarker + " " + t;
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
   localStorage.setItem(TRANSCRIPT_KEY, transcriptEl.value);
 }
 
-// Strip marker lines (exactly "~~~", ignoring surrounding whitespace) from a
-// string, joining the surrounding utterance text back together cleanly — used
-// everywhere the transcript is sent/copied OUT of the app.
+// Strip a LEADING config.transcriptMarker (plus the following space, if
+// present) from the start of each line, joining the utterance text back
+// together cleanly — used everywhere the transcript is sent/copied OUT of the
+// app. Lines that don't start with the marker (shouldn't normally happen) are
+// left untouched. The marker is user-configurable, so it's escaped before
+// being used in a RegExp.
 function stripMarkers(text) {
+  const marker = config.transcriptMarker;
+  if (!marker) return text;
+  const re = new RegExp("^" + escapeRegExp(marker) + " ?");
   return text
     .split(/\r?\n/)
-    .filter((line) => line.trim() !== TRANSCRIPT_MARKER)
+    .map((line) => line.replace(re, ""))
     .join("\n");
 }
 
