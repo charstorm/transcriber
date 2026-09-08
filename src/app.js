@@ -89,7 +89,13 @@ const DEFAULTS = {
   // later prompt-steering that pins the model's spelling). Configurable via
   // config.yaml `commands:`. Action paste_enter_clear = paste the whole canvas
   // into the app behind us, press Enter, then clear the canvas — all hands-free.
-  commands: [{ action: "paste_enter_clear", say: "strike and reload" }],
+  // Optional per-command `pasteKey` overrides the global paste key (Config
+  // view) for that command only — lets "strike and reload" and "cobra strike"
+  // target apps that need different paste shortcuts (ctrl+shift+v vs ctrl+v).
+  commands: [
+    { action: "paste_enter_clear", say: "strike and reload", pasteKey: "ctrl+shift+v" },
+    { action: "paste_enter_clear", say: "cobra strike", pasteKey: "ctrl+v" },
+  ],
   // retries on a failed transcription request (total attempts = maxRetries + 1),
   // with exponential backoff (1s, 2s, 4s, 8s …) between them. Matched to reshka,
   // which makes 2 attempts total (reshka_tui.py:256), i.e. 1 retry.
@@ -334,6 +340,7 @@ async function loadFileConfig() {
         }
         const cmd = { action: str(c.action), say: str(c.say) };
         if (str(c.emit)) cmd.emit = str(c.emit);
+        if (str(c.paste_key)) cmd.pasteKey = str(c.paste_key);
         return cmd;
       })
       .filter(Boolean);
@@ -551,7 +558,7 @@ function detectCommand(text) {
 async function runCommand(cmd) {
   switch (cmd.action) {
     case "paste_enter_clear":
-      await pasteEnterClear();
+      await pasteEnterClear(cmd.pasteKey);
       break;
     default:
       log(`voice command: unknown action '${cmd.action}' (ignored)`);
@@ -562,7 +569,7 @@ async function runCommand(cmd) {
 // for the next turn. NO window hide — the app is left exactly where it is and
 // keeps recording. (Whether the paste lands in another app depends on which
 // window has focus; managing that is the deferred foreground/background work.)
-async function pasteEnterClear() {
+async function pasteEnterClear(pasteKey) {
   const text = getOutgoingText();
   if (!text) {
     log("paste_enter_clear: canvas empty, nothing to send");
@@ -577,7 +584,7 @@ async function pasteEnterClear() {
     // text is safely captured before we clear the textarea below.
     await invoke("paste_transcript", {
       text,
-      pasteKey: config.pasteKey,
+      pasteKey: pasteKey || config.pasteKey,
       delayMs: config.pasteDelayMs,
       enterKey: config.enterKey, // press Enter after the paste
     });

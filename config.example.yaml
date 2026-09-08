@@ -30,17 +30,24 @@ paste_delay_ms: 800
 # trigger is stripped and the action fires; any sentence before it is kept and
 # pasted as normal content. Matching ignores case and punctuation. No key needed.
 #
-#   action  what to do. Supported: paste_enter_clear = paste the whole canvas
-#           into the app behind the transcriber, press Enter, then clear it.
-#   say     the phrase you speak.
-#   emit    (optional) exact string to match instead of `say` — reserved for
-#           later prompt-steering that pins the model's spelling of a codeword.
+#   action     what to do. Supported: paste_enter_clear = paste the whole canvas
+#              into the app behind the transcriber, press Enter, then clear it.
+#   say        the phrase you speak.
+#   emit       (optional) exact string to match instead of `say` — reserved for
+#              later prompt-steering that pins the model's spelling of a codeword.
+#   paste_key  (optional) overrides the Config view's Paste key for THIS command
+#              only — e.g. one phrase for apps needing ctrl+v, another for
+#              apps needing ctrl+shift+v. Omit to use the Config view setting.
 #
-# Providing this key REPLACES the built-in default (strike and reload). Omit it
-# to keep the default. Add multiple entries to map several phrases to an action.
+# Providing this key REPLACES the built-in defaults below. Omit it to keep
+# them. Add multiple entries to map several phrases to an action.
 commands:
   - action: paste_enter_clear
     say: strike and reload
+    paste_key: ctrl+shift+v
+  - action: paste_enter_clear
+    say: cobra strike
+    paste_key: ctrl+v
 # Key ydotool presses after the paste for paste_enter_clear (ydotool key name).
 enter_key: Enter
 
