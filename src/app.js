@@ -453,8 +453,17 @@ function stripMarkers(text) {
     .join("\n");
 }
 
-async function copyTranscript() {
+// The stripped transcript, wrapped in <voice> tags so anything downstream
+// (a human reviewing a paste, an LLM reading it) can tell this text came from
+// speech-to-text rather than being typed. No added newlines — the tags sit
+// directly against the text on its first/last line.
+function getOutgoingText() {
   const text = stripMarkers(transcriptEl.value).trim();
+  return text ? `<voice>${text}</voice>` : text;
+}
+
+async function copyTranscript() {
+  const text = getOutgoingText();
   if (!text) return false;
   await writeText(text);
   return true;
@@ -549,7 +558,7 @@ async function runCommand(cmd) {
 // keeps recording. (Whether the paste lands in another app depends on which
 // window has focus; managing that is the deferred foreground/background work.)
 async function pasteEnterClear() {
-  const text = stripMarkers(transcriptEl.value).trim();
+  const text = getOutgoingText();
   if (!text) {
     log("paste_enter_clear: canvas empty, nothing to send");
     return;
@@ -1063,7 +1072,7 @@ function toggleRecording() {
 // Hiding the window here is also what yields focus back so the keystroke lands in
 // the right app — for Esc that hide is the end state; for X we close after.
 async function pasteTranscript() {
-  const text = stripMarkers(transcriptEl.value).trim();
+  const text = getOutgoingText();
   log(`done: ${text.length} chars, autoPaste=${config.autoPaste}, pasteAvailable=${pasteAvailable}, autoCopy=${config.autoCopy}`);
   if (text && config.autoPaste && pasteAvailable) {
     try {
