@@ -387,7 +387,7 @@ function saveConfig() {
     autoRecord: $("cfgAutoRecord").checked,
     autoCopy: $("cfgAutoCopy").checked,
     autoPaste: $("cfgAutoPaste").checked,
-    pasteKey: $("cfgPasteKey").value,
+    pasteKey: $("cfgPasteKeyShift").checked ? "ctrl+shift+v" : "ctrl+v",
   };
   localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
 }
@@ -399,7 +399,8 @@ function fillConfigForm() {
   $("cfgAutoRecord").checked = config.autoRecord;
   $("cfgAutoCopy").checked = config.autoCopy;
   $("cfgAutoPaste").checked = config.autoPaste;
-  $("cfgPasteKey").value = config.pasteKey;
+  $("cfgPasteKeyShift").checked = config.pasteKey === "ctrl+shift+v";
+  $("cfgPasteKeyPlain").checked = config.pasteKey !== "ctrl+shift+v";
 }
 
 // ── view switching ────────────────────────────────────────────────────────────
