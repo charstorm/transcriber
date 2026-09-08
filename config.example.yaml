@@ -49,10 +49,6 @@ enter_key: Enter
 # text is copied/pasted out.
 # transcript_marker: "➤"
 
-# Short synthesized tones cueing VAD/transcription events (speech start/end,
-# misfire, transcription arrived, transcription failed). Set false to mute.
-# sound_feedback: true
-
 # On-disk format for the debug audio dumps (~/.cache/transcriber/dumps/). These
 # are throwaway captures of each utterance for manual quality inspection.
 #   wav   raw PCM16 — large, but needs no external tools.

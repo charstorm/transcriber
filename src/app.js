@@ -104,10 +104,6 @@ const DEFAULTS = {
   // Stripped (along with its trailing space) before text leaves the app — see
   // stripMarkers(). config.yaml-only setting (no UI field).
   transcriptMarker: "➤",
-  // short synthesized tones cueing VAD/transcription events (speech start/end,
-  // misfire, transcription arrived, transcription failed). config.yaml-only
-  // setting (no UI field) — see "sound feedback" section below.
-  soundFeedback: true,
 };
 
 // Byte-identical copy of reshka's _DEFAULT_SYSTEM_PROMPT (reshka_tui.py:128-141).
@@ -318,7 +314,6 @@ async function loadFileConfig() {
   if (num(file.paste_delay_ms) !== undefined) config.pasteDelayMs = Math.max(0, Math.round(num(file.paste_delay_ms)));
   if (str(file.enter_key)) config.enterKey = str(file.enter_key);
   if (str(file.transcript_marker)) config.transcriptMarker = str(file.transcript_marker);
-  if (bool(file.sound_feedback) !== undefined) config.soundFeedback = bool(file.sound_feedback);
   if (str(file.dump_audio_format)) {
     const fmt = str(file.dump_audio_format).toLowerCase();
     if (DUMP_FORMATS.includes(fmt)) config.dumpAudioFormat = fmt;
@@ -375,7 +370,6 @@ async function loadFileConfig() {
     autoPaste: config.autoPaste, pasteKey: config.pasteKey, pasteDelayMs: config.pasteDelayMs,
     enterKey: config.enterKey, commands: config.commands.map((c) => c.emit || c.say),
     dumpAudioFormat: config.dumpAudioFormat, transcriptMarker: config.transcriptMarker,
-    soundFeedback: config.soundFeedback,
     vad: vadParams, configInstructions: config.configInstructions.length,
   }));
 }
@@ -871,7 +865,6 @@ async function transcribeAudio(float32, seq) {
       job.state = "error";
       renderPipeline();
     }
-    if (config.soundFeedback) playTone("error");
     settleOrdered(seq, "");
     setStatus("error");
     setTimeout(refreshStatus, 2500);
@@ -890,146 +883,8 @@ async function transcribeAudio(float32, seq) {
     job.state = "done";
     renderPipeline();
   }
-  if (config.soundFeedback) playTone("chime");
   settleOrdered(seq, cleaned);
   refreshStatus();
-}
-
-// ── sound feedback ───────────────────────────────────────────────────────────
-// Short synthesized tones (no audio files) cueing 5 VAD/transcription events.
-// Ported from reshka's docs/script.js sound-generator (Web Audio API), but
-// simplified to skip its WAV-blob/<audio>-element round trip: each AudioBuffer
-// is played directly via a fresh AudioBufferSourceNode → ctx.destination, which
-// is simpler and lower-latency. Every call site gates on config.soundFeedback
-// (config.yaml `sound_feedback:`, default true) — see acquireMic/transcribeAudio.
-const TONE_FADE = 0.05;
-let toneAudioCtx = null; // lazily created, reused across all tones
-let toneBuffers = null; // { vadUp, vadDown, chime, error, misfire } — built once, on first play
-
-function getToneAudioContext() {
-  if (!toneAudioCtx) toneAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  return toneAudioCtx;
-}
-
-// A single sine tone at `freq` Hz and constant `amplitude`, fading out over
-// the last `fadeOut` seconds. Used for vadUp/vadDown.
-function generateSimpleTone(ctx, freq, amplitude, duration, fadeOut) {
-  const sampleRate = ctx.sampleRate;
-  const numSamples = Math.round(duration * sampleRate);
-  const fadeOutSamples = Math.round(fadeOut * sampleRate);
-  const buffer = ctx.createBuffer(1, numSamples, sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < numSamples; i++) {
-    let amp = amplitude;
-    if (i > numSamples - fadeOutSamples) amp *= (numSamples - i) / fadeOutSamples;
-    data[i] = amp * Math.sin((2 * Math.PI * freq * i) / sampleRate);
-  }
-  return buffer;
-}
-
-// Two-tone chime ("transcription arrived"): `freq1` for the first half of the
-// duration, `freq2` for the second half, crossfaded across the switch since
-// jumping straight from one sine to another mid-buffer clicks.
-function generateTwoToneChime(ctx, freq1, freq2, amplitude, duration, fadeOut) {
-  const sampleRate = ctx.sampleRate;
-  const numSamples = Math.round(duration * sampleRate);
-  const fadeOutSamples = Math.round(fadeOut * sampleRate);
-  const half = numSamples / 2;
-  const crossfadeSamples = Math.round(0.01 * sampleRate);
-  const buffer = ctx.createBuffer(1, numSamples, sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < numSamples; i++) {
-    let amp = amplitude;
-    if (i > numSamples - fadeOutSamples) amp *= (numSamples - i) / fadeOutSamples;
-    const dist = i - half;
-    let mix = (dist + crossfadeSamples) / (2 * crossfadeSamples);
-    if (mix < 0) mix = 0;
-    else if (mix > 1) mix = 1;
-    const s1 = Math.sin((2 * Math.PI * freq1 * i) / sampleRate);
-    const s2 = Math.sin((2 * Math.PI * freq2 * i) / sampleRate);
-    data[i] = amp * (s1 * (1 - mix) + s2 * mix);
-  }
-  return buffer;
-}
-
-// Three short beeps at `freq` Hz ("transcription failed" buzzer): the duration
-// is split into 3 equal segments, each on for its first 40% and silent after.
-// Each beep ramps in/out over a few ms instead of switching instantly, since a
-// hard on/off cut lands at an arbitrary sine phase and clicks.
-function generateBuzzer(ctx, freq, amplitude, duration, fadeOut) {
-  const sampleRate = ctx.sampleRate;
-  const numSamples = Math.round(duration * sampleRate);
-  const fadeOutSamples = Math.round(fadeOut * sampleRate);
-  const segment = numSamples / 3;
-  const onSamples = segment * 0.4;
-  const edgeRamp = Math.min(onSamples / 2, Math.round(0.004 * sampleRate));
-  const buffer = ctx.createBuffer(1, numSamples, sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < numSamples; i++) {
-    const posInSegment = i % segment;
-    let amp = 0;
-    if (posInSegment < onSamples) {
-      amp = amplitude;
-      if (posInSegment < edgeRamp) amp *= posInSegment / edgeRamp;
-      else if (posInSegment > onSamples - edgeRamp) amp *= (onSamples - posInSegment) / edgeRamp;
-    }
-    if (i > numSamples - fadeOutSamples) amp *= (numSamples - i) / fadeOutSamples;
-    data[i] = amp * Math.sin((2 * Math.PI * freq * i) / sampleRate);
-  }
-  return buffer;
-}
-
-// Downward chirp ("VAD misfire"): instantaneous frequency sweeps linearly from
-// `freqStart` to `freqEnd` over the duration.
-function generateChirp(ctx, freqStart, freqEnd, amplitude, duration, fadeOut) {
-  const sampleRate = ctx.sampleRate;
-  const numSamples = Math.round(duration * sampleRate);
-  const fadeOutSamples = Math.round(fadeOut * sampleRate);
-  const buffer = ctx.createBuffer(1, numSamples, sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < numSamples; i++) {
-    const t = i / sampleRate;
-    const freq = freqStart + (freqEnd - freqStart) * (t / duration);
-    let amp = amplitude;
-    if (i > numSamples - fadeOutSamples) amp *= (numSamples - i) / fadeOutSamples;
-    data[i] = amp * Math.sin(2 * Math.PI * freq * t);
-  }
-  return buffer;
-}
-
-// Build all 5 tone buffers once (pure functions of fixed durations — no need
-// to regenerate waveform data per play). Durations/frequencies/amplitudes
-// match reshka's original generator byte-for-byte.
-function buildToneBuffers(ctx) {
-  return {
-    vadUp: generateSimpleTone(ctx, 700, 0.05, 0.2, TONE_FADE),
-    vadDown: generateSimpleTone(ctx, 500, 0.3, 0.2, TONE_FADE),
-    chime: generateTwoToneChime(ctx, 600, 800, 0.3, 0.2, TONE_FADE),
-    error: generateBuzzer(ctx, 400, 0.5, 0.2, TONE_FADE),
-    misfire: generateChirp(ctx, 500, 300, 0.2, 0.15, TONE_FADE),
-  };
-}
-
-// Play a cached tone by name ("vadUp" | "vadDown" | "chime" | "error" |
-// "misfire"). Callers gate this on config.soundFeedback themselves. Never
-// throws — a Web Audio failure (no audio device, browser restriction, etc.)
-// is logged and swallowed so it can never break VAD/transcription flow.
-function playTone(name) {
-  try {
-    const ctx = getToneAudioContext();
-    if (!toneBuffers) toneBuffers = buildToneBuffers(ctx);
-    const buffer = toneBuffers[name];
-    if (!buffer) return;
-    // Browsers often start contexts "suspended" until a user gesture — resume
-    // so tones actually play the first time after the user clicks Start.
-    if (ctx.state === "suspended") ctx.resume().catch(() => {});
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination);
-    source.start();
-  } catch (err) {
-    log(`sound feedback: failed to play "${name}":`, String(err));
-  }
 }
 
 // ── mic acquire / release (warm-swap) ─────────────────────────────────────────
@@ -1067,7 +922,6 @@ async function acquireMic() {
       model: "v5",
       onSpeechStart: () => {
         log("speech start");
-        if (config.soundFeedback) playTone("vadUp");
         setStatus("speaking");
         pipeline.unshift({ seq: null, state: "recording" });
         pipeline.length = Math.min(pipeline.length, PIPELINE_SIZE);
@@ -1079,7 +933,6 @@ async function acquireMic() {
         const seq = capturedTotal; // 0-based capture order, drives ordered output
         capturedTotal++;
         log(`speech end — ${ms}ms (${audio.length} samples @16kHz), captured #${capturedTotal}`);
-        if (config.soundFeedback) playTone("vadDown");
         if (pipeline[0] && pipeline[0].state === "recording") {
           pipeline[0].seq = seq;
           pipeline[0].state = "pending";
@@ -1091,7 +944,6 @@ async function acquireMic() {
       },
       onVADMisfire: () => {
         log("VAD misfire (too short)");
-        if (config.soundFeedback) playTone("misfire");
         if (pipeline[0] && pipeline[0].state === "recording") pipeline.shift();
         renderPipeline();
         stopDurBar();
