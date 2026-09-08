@@ -395,7 +395,7 @@ fn paste_transcript(
         // the pasted text before Enter submits it. ydotool presses each key
         // sequence in argv order, so paste_key first, then enter_key.
         if enter_key.is_some() {
-            cmd.arg("--key-delay").arg("40");
+            cmd.arg("--key-delay").arg("60");
         }
         cmd.arg(&paste_key);
         if let Some(ek) = &enter_key {
