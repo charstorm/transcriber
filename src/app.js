@@ -928,35 +928,51 @@ function generateSimpleTone(ctx, freq, amplitude, duration, fadeOut) {
 }
 
 // Two-tone chime ("transcription arrived"): `freq1` for the first half of the
-// duration, `freq2` for the second half.
+// duration, `freq2` for the second half, crossfaded across the switch since
+// jumping straight from one sine to another mid-buffer clicks.
 function generateTwoToneChime(ctx, freq1, freq2, amplitude, duration, fadeOut) {
   const sampleRate = ctx.sampleRate;
   const numSamples = Math.round(duration * sampleRate);
   const fadeOutSamples = Math.round(fadeOut * sampleRate);
   const half = numSamples / 2;
+  const crossfadeSamples = Math.round(0.01 * sampleRate);
   const buffer = ctx.createBuffer(1, numSamples, sampleRate);
   const data = buffer.getChannelData(0);
   for (let i = 0; i < numSamples; i++) {
-    const freq = i < half ? freq1 : freq2;
     let amp = amplitude;
     if (i > numSamples - fadeOutSamples) amp *= (numSamples - i) / fadeOutSamples;
-    data[i] = amp * Math.sin((2 * Math.PI * freq * i) / sampleRate);
+    const dist = i - half;
+    let mix = (dist + crossfadeSamples) / (2 * crossfadeSamples);
+    if (mix < 0) mix = 0;
+    else if (mix > 1) mix = 1;
+    const s1 = Math.sin((2 * Math.PI * freq1 * i) / sampleRate);
+    const s2 = Math.sin((2 * Math.PI * freq2 * i) / sampleRate);
+    data[i] = amp * (s1 * (1 - mix) + s2 * mix);
   }
   return buffer;
 }
 
 // Three short beeps at `freq` Hz ("transcription failed" buzzer): the duration
 // is split into 3 equal segments, each on for its first 40% and silent after.
+// Each beep ramps in/out over a few ms instead of switching instantly, since a
+// hard on/off cut lands at an arbitrary sine phase and clicks.
 function generateBuzzer(ctx, freq, amplitude, duration, fadeOut) {
   const sampleRate = ctx.sampleRate;
   const numSamples = Math.round(duration * sampleRate);
   const fadeOutSamples = Math.round(fadeOut * sampleRate);
   const segment = numSamples / 3;
+  const onSamples = segment * 0.4;
+  const edgeRamp = Math.min(onSamples / 2, Math.round(0.004 * sampleRate));
   const buffer = ctx.createBuffer(1, numSamples, sampleRate);
   const data = buffer.getChannelData(0);
   for (let i = 0; i < numSamples; i++) {
     const posInSegment = i % segment;
-    let amp = posInSegment < segment * 0.4 ? amplitude : 0;
+    let amp = 0;
+    if (posInSegment < onSamples) {
+      amp = amplitude;
+      if (posInSegment < edgeRamp) amp *= posInSegment / edgeRamp;
+      else if (posInSegment > onSamples - edgeRamp) amp *= (onSamples - posInSegment) / edgeRamp;
+    }
     if (i > numSamples - fadeOutSamples) amp *= (numSamples - i) / fadeOutSamples;
     data[i] = amp * Math.sin((2 * Math.PI * freq * i) / sampleRate);
   }
