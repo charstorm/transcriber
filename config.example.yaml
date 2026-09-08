@@ -17,9 +17,9 @@ max_retries: 1
 # `ydotool`, and a running `ydotoold`. If those are missing, a warning is shown
 # and the app falls back to plain clipboard copy. Set false to disable.
 auto_paste: true
-# Key sequence ydotool presses to paste. ctrl+shift+v works in terminals AND
-# most GUI apps; plain ctrl+v is a no-op in terminals.
-paste_key: ctrl+shift+v
+# Key sequence ydotool presses to paste is set in the app's Config view (Paste
+# key dropdown: Ctrl+V / Ctrl+Shift+V), not here — ctrl+shift+v works in
+# terminals AND most GUI apps, but plain ctrl+v is a no-op in terminals.
 # Delay (ms) before the paste keystroke fires, so focus has time to return to
 # the previously-focused window after the transcriber hides.
 paste_delay_ms: 800

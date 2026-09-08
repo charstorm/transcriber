@@ -310,7 +310,9 @@ async function loadFileConfig() {
   if (str(file.api_key)) config.apiKey = str(file.api_key);
   if (num(file.max_retries) !== undefined) config.maxRetries = Math.max(0, Math.round(num(file.max_retries)));
   if (bool(file.auto_paste) !== undefined) config.autoPaste = bool(file.auto_paste);
-  if (str(file.paste_key)) config.pasteKey = str(file.paste_key);
+  // paste_key is intentionally NOT read from the file — it's set via the app's
+  // Config view (Paste key dropdown) so a config.yaml value can't silently
+  // override the user's in-app choice on every launch.
   if (num(file.paste_delay_ms) !== undefined) config.pasteDelayMs = Math.max(0, Math.round(num(file.paste_delay_ms)));
   if (str(file.enter_key)) config.enterKey = str(file.enter_key);
   if (str(file.transcript_marker)) config.transcriptMarker = str(file.transcript_marker);
