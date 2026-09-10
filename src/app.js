@@ -199,6 +199,7 @@ let pasteAvailable = false;
 let pasteMessage = "";
 let vadInstance = null;
 let isRecording = false;
+let startInFlight = false; // guards against overlapping startRecording() calls (e.g. init() vs. the "wake" event) spinning up duplicate VAD instances
 let activeApiCount = 0; // requests currently in flight
 let capturedTotal = 0; // utterances captured this session
 let completedTotal = 0; // utterances successfully transcribed
@@ -1048,7 +1049,8 @@ function onDeviceChange() {
 
 // ── recording control ────────────────────────────────────────────────────────
 async function startRecording() {
-  if (isRecording) return;
+  if (isRecording || startInFlight) return;
+  startInFlight = true;
   try {
     await acquireMic();
     isRecording = true;
@@ -1060,6 +1062,8 @@ async function startRecording() {
     console.error("failed to start recording:", err);
     log("failed to start recording:", String(err));
     setStatus("idle");
+  } finally {
+    startInFlight = false;
   }
 }
 
