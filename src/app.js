@@ -271,10 +271,20 @@ function renderPipeline() {
 }
 
 // ── config persistence ──────────────────────────────────────────────────────
+// Only the fields the Config-view form actually manages are honored from a
+// saved localStorage snapshot — everything else (commands, transcriptMarker,
+// VAD tuning, etc.) always comes from DEFAULTS or config.yaml. Otherwise an
+// old saveConfig() snapshot (taken before a code/config.yaml change to one of
+// those fields) permanently masks the new value, since it's blindly spread
+// back over the defaults on every load.
+const UI_CONFIG_FIELDS = ["endpoint", "apiKey", "model", "autoRecord", "autoCopy", "autoPaste", "pasteKey"];
+
 function loadConfig() {
   try {
     const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || "{}");
-    config = { ...DEFAULTS, ...saved };
+    const picked = {};
+    for (const k of UI_CONFIG_FIELDS) if (k in saved) picked[k] = saved[k];
+    config = { ...DEFAULTS, ...picked };
   } catch {
     config = { ...DEFAULTS };
   }
@@ -397,7 +407,12 @@ function saveConfig() {
     autoPaste: $("cfgAutoPaste").checked,
     pasteKey: $("cfgPasteKeyShift").checked ? "ctrl+shift+v" : "ctrl+v",
   };
-  localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+  // Persist only the UI-managed fields (see loadConfig) — never the full
+  // config object, so a snapshot taken today can't mask a future code/
+  // config.yaml change to commands, transcriptMarker, VAD tuning, etc.
+  const toSave = {};
+  for (const k of UI_CONFIG_FIELDS) toSave[k] = config[k];
+  localStorage.setItem(CONFIG_KEY, JSON.stringify(toSave));
 }
 
 function fillConfigForm() {
