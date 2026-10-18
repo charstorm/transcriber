@@ -56,6 +56,14 @@ enter_key: Enter
 # text is copied/pasted out.
 # transcript_marker: "➤"
 
+# Section dividers. Say this word two or more times in a row at the START or END
+# of an utterance (or on its own) to drop a divider line into the transcript:
+# twice -> "==", three or more times -> "===", each with a blank line above
+# it. A single word, or a run in the middle of a sentence, stays as plain text.
+# The model is told about the phrase automatically, so changing the word here is
+# enough. Must be a single word.
+# divider_word: tap
+
 # On-disk format for the debug audio dumps (~/.cache/transcriber/dumps/). These
 # are throwaway captures of each utterance for manual quality inspection.
 #   wav   raw PCM16 — large, but needs no external tools.

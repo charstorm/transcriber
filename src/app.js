@@ -110,6 +110,11 @@ const DEFAULTS = {
   // Stripped (along with its trailing space) before text leaves the app — see
   // stripMarkers(). config.yaml-only setting (no UI field).
   transcriptMarker: "➤",
+  // Section dividers. Saying this word two or more times in a row at the START
+  // or END of an utterance (or as the whole utterance) drops a divider line into
+  // the transcript instead of the words: 2 → "==", 3+ → "===". A single word,
+  // or a run mid-sentence, is left as plain text. config.yaml `divider_word`.
+  dividerWord: "tap",
 };
 
 // Byte-identical copy of reshka's _DEFAULT_SYSTEM_PROMPT (reshka_tui.py:128-141).
@@ -134,14 +139,23 @@ Rules:
 
 // config_instructions from ~/.config/transcriber/config.yaml are appended to the
 // system prompt, matching reshka's mechanism (reshka_tui.py:608-615): each entry
-// becomes a "- {instruction}" bullet under a "Config Instructions:" heading. The
-// effective prompt is rebuilt whenever the file config is (re)loaded.
-let systemPrompt = SYSTEM_PROMPT;
-function buildSystemPrompt(instructions) {
+// becomes a "- {instruction}" bullet under a "Config Instructions:" heading. A
+// divider-word bullet (built from config.dividerWord, so changing the word keeps
+// the model in step) is always appended last. Built per request from the
+// current config.
+function buildSystemPrompt() {
   // Match reshka (reshka_tui.py:609-614) byte-for-byte: keep entries whose trimmed
   // form is truthy, but bullet the UNTRIMMED value.
-  const items = (instructions || []).map((i) => String(i)).filter((i) => i.trim());
-  systemPrompt = items.length
+  const items = (config.configInstructions || []).map((i) => String(i)).filter((i) => i.trim());
+  const w = config.dividerWord;
+  if (w) {
+    items.push(
+      `The phrases "${w} ${w}" and "${w} ${w} ${w}" are section-divider commands to the app, not content. ` +
+      `They are short and easy to miss, so listen for them carefully and never drop them, even at the very start or end of an utterance. ` +
+      `Transcribe them exactly as spoken: lowercase, every repeat kept (never collapse "${w} ${w} ${w}" into "${w} ${w}"), no punctuation inside.`,
+    );
+  }
+  return items.length
     ? SYSTEM_PROMPT + "\n\nConfig Instructions:\n" + items.map((i) => `- ${i}`).join("\n")
     : SYSTEM_PROMPT;
 }
@@ -357,11 +371,18 @@ async function loadFileConfig() {
       .filter(Boolean);
   }
 
+  // divider_word: a single word (letters/digits). Anything else is rejected so
+  // the matching regex stays a plain word match.
+  if (str(file.divider_word)) {
+    const w = normalizePhrase(file.divider_word);
+    if (/^[a-z0-9]+$/.test(w)) config.dividerWord = w;
+    else log(`config.yaml: divider_word "${file.divider_word}" must be a single word, keeping "${config.dividerWord}"`);
+  }
+
   if (Array.isArray(file.config_instructions)) {
     config.configInstructions = file.config_instructions
       .map((i) => String(i).trim())
       .filter(Boolean);
-    buildSystemPrompt(config.configInstructions);
   }
 
   // theme: 5 base color tokens (bg/panel/line/accent/alert). Everything else in
@@ -390,7 +411,7 @@ async function loadFileConfig() {
     autoPaste: config.autoPaste, pasteKey: config.pasteKey, pasteDelayMs: config.pasteDelayMs,
     enterKey: config.enterKey, commands: config.commands.map((c) => c.emit || c.say),
     dumpAudioFormat: config.dumpAudioFormat, transcriptMarker: config.transcriptMarker,
-    vad: vadParams, configInstructions: config.configInstructions.length,
+    dividerWord: config.dividerWord, vad: vadParams, configInstructions: config.configInstructions.length,
   }));
 }
 
@@ -459,8 +480,24 @@ function refreshStatus() {
 function appendTranscript(text) {
   const t = text.trim();
   if (!t) return;
+  appendLine(config.transcriptMarker + " " + t);
+}
+
+// Divider lines get no marker and a blank line above (none below) — without
+// it, Markdown would read "text\n==" as a heading underline. "=" rather than
+// "-" because a leading "- " reads as a list bullet in Markdown-ish inputs.
+function appendDivider(count) {
+  appendLine(count >= 3 ? "===" : "==");
+}
+
+function isDividerLine(line) {
+  return line === "==" || line === "===";
+}
+
+function appendLine(line) {
   const existing = transcriptEl.value.trim();
-  transcriptEl.value = (existing ? existing + "\n" : "") + config.transcriptMarker + " " + t;
+  const gap = isDividerLine(line) ? "\n\n" : "\n";
+  transcriptEl.value = (existing ? existing + gap : "") + line;
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
   localStorage.setItem(TRANSCRIPT_KEY, transcriptEl.value);
 }
@@ -486,7 +523,9 @@ function stripMarkers(text) {
 // speech-to-text rather than being typed. No added newlines — the tags sit
 // directly against the text on its first/last line.
 function getOutgoingText() {
-  const text = stripMarkers(transcriptEl.value).trim();
+  let text = stripMarkers(transcriptEl.value).trim();
+  // keep the newline after a trailing divider so it stays on its own line
+  if (isDividerLine(text.slice(text.lastIndexOf("\n") + 1))) text += "\n";
   return text ? `<voice>${text}</voice>` : text;
 }
 
@@ -567,6 +606,40 @@ function detectCommand(text) {
     }
   }
   return null;
+}
+
+// ── section dividers ─────────────────────────────────────────────────────────
+// A run of 2+ divider words ("tap tap", "Tap, tap tap.") at the start and/or end
+// of an utterance becomes a divider line; the remaining text is appended as
+// normal content between them. Runs mid-sentence and single words stay text.
+function dividerRegexes() {
+  const w = escapeRegExp(config.dividerWord);
+  const run = `${w}(?:[^a-z0-9]+${w})+`;
+  return {
+    word: new RegExp(w, "gi"),
+    lead: new RegExp(`^[^a-z0-9]*(${run})(?![a-z0-9])[^a-z0-9]*`, "i"),
+    trail: new RegExp(`(^|[^a-z0-9])(${run})[^a-z0-9]*$`, "i"),
+  };
+}
+
+function appendWithDividers(text) {
+  let rest = String(text).trim();
+  if (!config.dividerWord) return appendTranscript(rest);
+  const re = dividerRegexes();
+  const lead = rest.match(re.lead);
+  if (lead) {
+    appendDivider(lead[1].match(re.word).length);
+    rest = rest.slice(lead[0].length);
+  }
+  let tail = 0;
+  const trail = rest.match(re.trail);
+  if (trail) {
+    tail = trail[2].match(re.word).length;
+    rest = rest.slice(0, trail.index + trail[1].length).replace(/[\s,;:]+$/, "");
+  }
+  if (lead || tail) log(`divider: "${text}" -> lead=${lead ? lead[1].match(re.word).length : 0} tail=${tail}`);
+  appendTranscript(rest);
+  if (tail) appendDivider(tail);
 }
 
 // Run a matched command's action. paste_enter_clear is the only action for now;
@@ -674,13 +747,13 @@ function settleOrdered(seq, text) {
     if (det) {
       if (det.leading) {
         log(`voice command: "${t}" -> ${det.cmd.action} (kept leading text, stripped trigger)`);
-        appendTranscript(det.leading);
+        appendWithDividers(det.leading);
       } else {
         log(`voice command (standalone): "${t}" -> ${det.cmd.action}`);
       }
       runCommand(det.cmd).catch((e) => log("voice command failed:", String(e)));
     } else {
-      appendTranscript(t);
+      appendWithDividers(t);
     }
   }
 }
@@ -786,7 +859,7 @@ async function postChat(base64) {
       model: config.model,
       temperature: 0.01,
       messages: [
-        { role: "system", content: systemPrompt },
+        { role: "system", content: buildSystemPrompt() },
         {
           // Byte-identical to reshka's user content (reshka_tui.py:266-271): three
           // parts in this exact order. The trailing "Response(json):" cue primes the
