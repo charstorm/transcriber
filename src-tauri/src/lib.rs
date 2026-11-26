@@ -326,12 +326,8 @@ fn paste_transcript(
     // command to paste-and-submit in one shot. None = paste only (Esc/X flow).
     enter_key: Option<String>,
 ) -> Result<(), String> {
-    // Defensive guard: never fire the paste shortcut for empty content. The
-    // frontend already trims + skips empty, but enforce it here too so the
-    // ydotool keystroke can never land on a stale clipboard. Use the trimmed
-    // text for the clipboard so trailing whitespace is stripped at the source.
-    let text = text.trim();
-    if text.is_empty() {
+    // Skip blank transcripts without changing the text sent to the clipboard.
+    if text.trim().is_empty() {
         append_log("[paste] skipped: empty transcript (no shortcut fired)");
         return Ok(());
     }

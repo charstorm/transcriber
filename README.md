@@ -19,9 +19,13 @@ The audio pipeline runs entirely in the web frontend:
    (Silero VAD via onnxruntime-web/WASM) captures the mic and emits speech
    segments.
 2. **Encode** — each segment is converted to 16 kHz mono WAV → base64.
-3. **Transcribe** — posted as `input_audio` to a configurable
-   OpenAI-compatible `chat/completions` endpoint (default: OpenRouter).
-4. **Display** — the returned text is appended to the transcript.
+3. **Transcribe** — queued segments are sent one at a time to the configured
+   endpoint (default: OpenRouter). Chat models also receive a short excerpt of
+   the preceding transcript and return its exact continuation, including the
+   punctuation and whitespace needed at the join.
+4. **Display** — the app appends the continuation directly before the next
+   request starts. The dedicated transcription endpoint still starts each
+   chunk on a new line.
 
 Rust (Tauri) provides the native window, the clipboard (auto-copy on close),
 and — on Linux — auto-grants the WebKitGTK microphone permission.

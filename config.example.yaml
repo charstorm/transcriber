@@ -51,9 +51,7 @@ commands:
 # Key ydotool presses after the paste for paste_enter_clear (ydotool key name).
 enter_key: Enter
 
-# Character (or short string) prefixed to each utterance in the transcript
-# textarea, e.g. "➤ hello there". Stripped (with its trailing space) before the
-# text is copied/pasted out.
+# Legacy line marker used when restoring a draft saved by an older version.
 # transcript_marker: "➤"
 
 # Section dividers. Say this word two or more times in a row at the START or END
