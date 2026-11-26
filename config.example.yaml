@@ -8,6 +8,13 @@ model: mistralai/voxtral-small-24b-2507
 # endpoint: https://openrouter.ai/api/v1/chat/completions
 # api_key: sk-...
 
+# Optional OpenRouter chat routing. List up to three exact endpoint slugs for
+# the selected model. For xiaomi/mimo-v2.6-flash, for example:
+# openrouter_provider_allowlist: [tenstorrent/fp8, makora/fp8, cohere/fp8]
+# The app checks the ZDR catalog, excludes Safety Retention, and sorts by
+# latency. Set the model group to ZDR only in OpenRouter privacy settings or
+# its guardrail to enforce strict ZDR at routing time too.
+
 # Retries on a failed transcription request. Total attempts = max_retries + 1,
 # with exponential backoff (1s, 2s, 4s, 8s …) between attempts.
 max_retries: 1

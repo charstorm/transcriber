@@ -23,8 +23,9 @@ The audio pipeline runs entirely in the web frontend:
    endpoint (default: OpenRouter). Chat models also receive a short excerpt of
    the preceding transcript and return its exact continuation, including the
    punctuation and whitespace needed at the join.
-4. **Display** — the app appends the continuation directly before the next
-   request starts. The dedicated transcription endpoint still starts each
+4. **Display** — the chat model supplies sentence and paragraph breaks. The
+   app adds a space at a chunk boundary when a letter or digit would otherwise
+   touch the previous text. The dedicated transcription endpoint starts each
    chunk on a new line.
 
 Rust (Tauri) provides the native window, the clipboard (auto-copy on close),
