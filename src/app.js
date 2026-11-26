@@ -518,15 +518,11 @@ function stripMarkers(text) {
     .join("\n");
 }
 
-// The stripped transcript, wrapped in <voice> tags so anything downstream
-// (a human reviewing a paste, an LLM reading it) can tell this text came from
-// speech-to-text rather than being typed. No added newlines — the tags sit
-// directly against the text on its first/last line.
 function getOutgoingText() {
   let text = stripMarkers(transcriptEl.value).trim();
   // keep the newline after a trailing divider so it stays on its own line
   if (isDividerLine(text.slice(text.lastIndexOf("\n") + 1))) text += "\n";
-  return text ? `<voice>${text}</voice>` : text;
+  return text;
 }
 
 async function copyTranscript() {
